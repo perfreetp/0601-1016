@@ -15,6 +15,8 @@ export interface UserProfile {
   id: string
   nickname: string
   avatar: Avatar
+  nameplate: string
+  defaultEmoji: string
   level: number
   totalMinutes: number
   sessions: number
@@ -61,20 +63,31 @@ export interface Hint {
   example?: string
 }
 
-export interface PlaybackItem {
-  id: string
-  date: string
-  duration: number
-  roomName: string
-  subtitle: string
-  corrections: Correction[]
-}
-
 export interface Correction {
   timestamp: number
   original: string
   corrected: string
   note: string
+}
+
+export interface SubtitleLine {
+  id: string
+  speaker: string
+  speakerId: string
+  text: string
+  timestamp: number
+  isMe: boolean
+}
+
+export interface PlaybackItem {
+  id: string
+  date: string
+  duration: number
+  roomName: string
+  roomId: string
+  subtitle: string
+  subtitles: SubtitleLine[]
+  corrections: Correction[]
 }
 
 export interface Friend {
@@ -83,6 +96,34 @@ export interface Friend {
   avatar: Avatar
   online: boolean
   level: number
+}
+
+export type InviteStatus = 'pending' | 'accepted' | 'declined'
+
+export interface RoomInvite {
+  id: string
+  fromId: string
+  fromName: string
+  fromAvatar: Avatar
+  roomId: string
+  roomName: string
+  time: string
+  status: InviteStatus
+  isFromMe: boolean
+}
+
+export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed'
+
+export interface Appointment {
+  id: string
+  partnerId: string
+  partnerName: string
+  partnerAvatar: Avatar
+  time: string
+  topic: string
+  language: Language
+  status: AppointmentStatus
+  createdAt: string
 }
 
 export interface Badge {
@@ -100,6 +141,8 @@ export interface StudyPlan {
   target: string
   deadline: string
   progress: number
+  createdAt: string
+  checkIns: string[]
 }
 
 export interface AppState {
@@ -113,8 +156,13 @@ export interface AppState {
   tasks: TaskCard[]
   activeTask: TaskCard | null
   hints: Hint[]
+  liveSubtitles: SubtitleLine[]
   recordings: PlaybackItem[]
+  isRecording: boolean
+  recordingStartTime: number | null
   friends: Friend[]
+  roomInvites: RoomInvite[]
+  appointments: Appointment[]
   favoriteRooms: string[]
   badges: Badge[]
   studyPlans: StudyPlan[]

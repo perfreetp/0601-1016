@@ -1,49 +1,61 @@
 import { useState } from 'react'
-import { useAppStore, avatarsList } from '@/store'
+import { useAppStore, avatarsList, expressions } from '@/store'
 import type { Avatar } from '@/types'
 
-const expressions = [
-  { id: 'e1', name: '开心', emoji: '😊' },
-  { id: 'e2', name: '微笑', emoji: '🙂' },
-  { id: 'e3', name: '大笑', emoji: '😄' },
-  { id: 'e4', name: '思考', emoji: '🤔' },
-  { id: 'e5', name: '惊讶', emoji: '😮' },
-  { id: 'e6', name: '害羞', emoji: '😳' },
-  { id: 'e7', name: '酷', emoji: '😎' },
-  { id: 'e8', name: '爱', emoji: '🥰' },
-  { id: 'e9', name: '加油', emoji: '💪' },
-  { id: 'e10', name: '点赞', emoji: '👍' },
-  { id: 'e11', name: '握手', emoji: '🤝' },
-  { id: 'e12', name: 'OK', emoji: '👌' },
-]
-
 function CharacterWindow() {
-  const { profile } = useAppStore()
+  const { profile, updateProfile } = useAppStore()
   const [nickname, setNickname] = useState(profile.nickname)
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(profile.avatar)
-  const [selectedExpr, setSelectedExpr] = useState<string>('e1')
-  const [nameplate, setNameplate] = useState('努力学习英语 ✨')
+  const [selectedExpr, setSelectedExpr] = useState<string>(
+    expressions.find((e) => e.emoji === profile.defaultEmoji)?.id || expressions[0].id
+  )
+  const [nameplate, setNameplate] = useState(profile.nameplate)
+  const [saved, setSaved] = useState(false)
 
   const saveProfile = () => {
-    const newProfile = { ...profile, nickname, avatar: selectedAvatar }
-    useAppStore.setState({ profile: newProfile })
-    window.electronAPI.updateState('profile', newProfile)
+    const emoji = expressions.find((e) => e.id === selectedExpr)?.emoji || '😊'
+    updateProfile({
+      nickname,
+      avatar: selectedAvatar,
+      nameplate,
+      defaultEmoji: emoji,
+    })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   return (
     <div>
       <div className="window-header">
-        <h1 className="window-title">👤 角色设置</h1>
+        <div className="flex gap-12 items-center">
+          <h1 className="window-title">👤 角色设置</h1>
+          {saved && (
+            <span
+              style={{
+                padding: '4px 12px',
+                background: 'rgba(0, 184, 148, 0.2)',
+                color: 'var(--success)',
+                borderRadius: 999,
+                fontSize: 12,
+              }}
+            >
+              ✅ 已保存并同步
+            </span>
+          )}
+        </div>
         <div className="window-nav">
           <button className="nav-btn" onClick={() => window.electronAPI.openWindow('lobby')}>
             🏠 返回大厅
+          </button>
+          <button className="nav-btn" onClick={() => window.electronAPI.openWindow('room')}>
+            🎙️ 房间
           </button>
         </div>
       </div>
 
       <div className="grid grid-2 gap-24">
         <div className="card">
-          <h3 className="text-lg font-bold mb-16">角色预览</h3>
+          <h3 className="text-lg font-bold mb-16">✨ 角色预览</h3>
           <div
             className="flex flex-col flex-center"
             style={{ padding: '32px 0' }}
@@ -69,7 +81,12 @@ function CharacterWindow() {
                 border: '1px solid var(--primary)',
                 borderRadius: 999,
                 fontSize: 13,
+                maxWidth: '100%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
+              title={nameplate}
             >
               🏷️ {nameplate}
             </div>
@@ -77,6 +94,9 @@ function CharacterWindow() {
               <div>累计练习: {Math.floor(profile.totalMinutes / 60)} 小时 {profile.totalMinutes % 60} 分钟</div>
               <div className="mt-4">参与会话: {profile.sessions} 次</div>
               <div className="mt-4">流利度: {profile.fluency}%</div>
+            </div>
+            <div className="text-xs text-muted mt-16">
+              💡 修改后点击保存，数据会同步到大厅、房间等所有窗口
             </div>
           </div>
         </div>
@@ -92,16 +112,18 @@ function CharacterWindow() {
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="输入你的昵称"
+                maxLength={16}
               />
             </div>
             <div>
-              <label className="label">个性名牌</label>
+              <label className="label">个性名牌（将显示在大厅和房间）</label>
               <input
                 type="text"
                 className="input"
                 value={nameplate}
                 onChange={(e) => setNameplate(e.target.value)}
                 placeholder="一句展示个性的话"
+                maxLength={30}
               />
             </div>
           </div>
@@ -115,6 +137,7 @@ function CharacterWindow() {
                   className={`avatar ${selectedAvatar.id === avatar.id ? 'selected' : ''}`}
                   style={{ background: avatar.color }}
                   onClick={() => setSelectedAvatar(avatar)}
+                  title={avatar.name}
                 >
                   {avatar.emoji}
                 </div>
@@ -123,7 +146,7 @@ function CharacterWindow() {
           </div>
 
           <div className="card">
-            <h3 className="text-lg font-bold mb-12">😊 默认表情</h3>
+            <h3 className="text-lg font-bold mb-12">😊 默认表情（将显示在头像旁）</h3>
             <div className="grid grid-4 gap-8">
               {expressions.map((expr) => (
                 <button
@@ -143,8 +166,11 @@ function CharacterWindow() {
             </div>
           </div>
 
-          <button className="btn btn-large" onClick={saveProfile}>
-            ✅ 保存设置
+          <button
+            className={`btn btn-large ${saved ? 'btn-success' : ''}`}
+            onClick={saveProfile}
+          >
+            {saved ? '✅ 已保存' : '💾 保存并同步设置'}
           </button>
         </div>
       </div>

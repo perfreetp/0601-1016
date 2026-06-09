@@ -17,6 +17,7 @@ function LobbyWindow() {
     selectedDifficulty,
     profile,
     favoriteRooms,
+    enterRoom,
   } = useAppStore()
 
   const setLanguage = (lang: Language) => {
@@ -34,9 +35,16 @@ function LobbyWindow() {
     window.electronAPI.updateState('selectedDifficulty', diff)
   }
 
-  const enterRoom = (room: Room) => {
-    useAppStore.setState({ currentRoom: room })
-    window.electronAPI.updateState('currentRoom', room)
+  const toggleFavorite = (roomId: string) => {
+    const favs = favoriteRooms.includes(roomId)
+      ? favoriteRooms.filter((r) => r !== roomId)
+      : [...favoriteRooms, roomId]
+    useAppStore.setState({ favoriteRooms: favs })
+    window.electronAPI.updateState('favoriteRooms', favs)
+  }
+
+  const enterAndOpenRoom = (room: Room) => {
+    enterRoom(room)
     window.electronAPI.openWindow('room')
   }
 
@@ -60,13 +68,29 @@ function LobbyWindow() {
     <div>
       <div className="window-header">
         <div className="flex flex-center gap-12">
-          <div className="avatar" style={{ background: profile.avatar.color }}>
-            {profile.avatar.emoji}
+          <div style={{ position: 'relative' }}>
+            <div
+              className="avatar"
+              style={{ background: profile.avatar.color, position: 'relative' }}
+            >
+              {profile.avatar.emoji}
+            </div>
+            <span style={{ position: 'absolute', top: -6, right: -6, fontSize: 20 }}>
+              {profile.defaultEmoji}
+            </span>
           </div>
           <div>
             <h1 className="window-title">元宇宙语言大厅</h1>
-            <p className="text-secondary text-sm mt-8">
-              Lv.{profile.level} · {profile.nickname} · 今日已练习 45 分钟
+            <p className="text-secondary text-sm mt-4">
+              Lv.{profile.level} · {profile.nickname}
+              {profile.nameplate && (
+                <span className="ml-8" style={{ color: 'var(--primary-light)' }}>
+                  「{profile.nameplate}」
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-muted mt-4">
+              ⏱️ 累计 {Math.floor(profile.totalMinutes / 60)}h · 🎯 {profile.sessions} 次练习 · 🎤 {profile.fluency}% 流利度
             </p>
           </div>
         </div>
@@ -92,7 +116,7 @@ function LobbyWindow() {
           {languages.map((lang) => (
             <button
               key={lang.value}
-              className={`card text-left ${selectedLanguage === lang.value ? 'card-active' : ''}`}
+              className="card text-left"
               onClick={() => setLanguage(lang.value)}
               style={{
                 borderColor: selectedLanguage === lang.value ? 'var(--primary)' : undefined,
@@ -172,7 +196,7 @@ function LobbyWindow() {
 
       <div className="grid grid-2 gap-16">
         {displayRooms.map((room) => (
-          <div key={room.id} className="room-card" onClick={() => enterRoom(room)}>
+          <div key={room.id} className="room-card" onClick={() => enterAndOpenRoom(room)}>
             <div className="flex flex-between mb-12">
               <div>
                 <h3 className="font-bold text-lg mb-4">{room.name}</h3>
@@ -193,6 +217,7 @@ function LobbyWindow() {
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
+                  toggleFavorite(room.id)
                 }}
               >
                 {favoriteRooms.includes(room.id) ? '⭐ 已收藏' : '☆ 收藏'}
