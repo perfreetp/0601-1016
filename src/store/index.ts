@@ -24,6 +24,7 @@ import type {
   TaskStatus,
   GroupTimer,
   FluencyReport,
+  HintPreferences,
 } from '@/types'
 
 const STORAGE_KEY = 'metaverse-language-state'
@@ -213,6 +214,12 @@ const defaultState: AppState = {
   customRooms: sampleCustomRooms,
   currentRound: 1,
   namedSpeakerId: null,
+  showAIRecommendation: true,
+  hintPreferences: {
+    difficulty: 'intermediate',
+    focusTypes: ['vocabulary', 'pattern'],
+    autoSpeak: true,
+  },
 }
 
 function loadFromStorage(): Partial<AppState> | null {
@@ -242,6 +249,8 @@ function saveToStorage(state: AppState) {
       tasks: state.tasks,
       customRooms: state.customRooms,
       friends: state.friends,
+      showAIRecommendation: state.showAIRecommendation,
+      hintPreferences: state.hintPreferences,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch {
@@ -318,12 +327,32 @@ export const useAppStore = create<AppState & {
   createCustomTask: (data: { title: string; theme: Theme; difficulty: Difficulty; description: string; dialog: string[]; keyVocabulary: string[]; keyPatterns: string[] }) => void
   exportSubtitles: (recordingId: string) => string
   enterRoomFromAppointment: (appointmentId: string) => Room | null
+  acceptAssignedTask: (assignedTaskId: string) => void
+  toggleAIRecommendation: () => void
+  updateHintPreferences: (prefs: Partial<HintPreferences>) => void
 }>((set, get) => {
   const stored = loadFromStorage()
 
-  return {
+  let mergedState: AppState = {
     ...defaultState,
     ...stored,
+  } as AppState
+
+  const syncedParticipants = mergedState.participants.map((pp) =>
+    pp.id === 'u1'
+      ? {
+          ...pp,
+          nickname: mergedState.profile.nickname,
+          avatar: mergedState.profile.avatar,
+          nameplate: mergedState.profile.nameplate,
+          defaultEmoji: mergedState.profile.defaultEmoji,
+        }
+      : pp
+  )
+  mergedState = { ...mergedState, participants: syncedParticipants }
+
+  return {
+    ...mergedState,
 
     updateProfile: (p) => {
       const newProfile = { ...get().profile, ...p }
@@ -355,11 +384,59 @@ export const useAppStore = create<AppState & {
 
       const duration = Math.max(1, Math.floor((Date.now() - state.recordingStartTime) / 1000))
       const minutes = Math.ceil(duration / 60)
-      const subtitle = state.liveSubtitles.length > 0
-        ? state.liveSubtitles[state.liveSubtitles.length - 1].text
-        : '本次练习内容'
 
-      const generatedCorrections: Correction[] = state.liveSubtitles
+      let finalSubtitles = [...state.liveSubtitles]
+
+      if (finalSubtitles.length < 3) {
+        const fallbackSubtitles: SubtitleLine[] = []
+        const otherParticipants = state.participants.filter((p) => p.id !== 'u1')
+        const other = otherParticipants[0] || state.participants[1]
+
+        const fallbackLines = [
+          { text: "Hi! How's it going today?", isMe: false },
+          { text: "I'm good, thanks! I've been practicing English.", isMe: true },
+          { text: "That's great! What did you learn recently?", isMe: false },
+          { text: "I learned some useful phrases for ordering food.", isMe: true },
+          { text: "Nice! Can you teach me some?", isMe: false },
+        ]
+
+        const count = 3 + Math.floor(Math.random() * 3)
+        const selectedLines = fallbackLines.slice(0, count)
+
+        let ts = 0
+        selectedLines.forEach((line, idx) => {
+          if (line.isMe) {
+            fallbackSubtitles.push({
+              id: generateId('sub'),
+              speaker: state.profile.nickname,
+              speakerId: 'u1',
+              speakerAvatar: state.profile.avatar,
+              speakerEmoji: state.profile.defaultEmoji,
+              text: line.text,
+              timestamp: ts,
+              isMe: true,
+            })
+          } else {
+            fallbackSubtitles.push({
+              id: generateId('sub'),
+              speaker: other?.nickname || 'Partner',
+              speakerId: other?.id || 'u2',
+              speakerAvatar: other?.avatar,
+              speakerEmoji: other?.defaultEmoji,
+              text: line.text,
+              timestamp: ts,
+              isMe: false,
+            })
+          }
+          ts += 10
+        })
+
+        finalSubtitles = fallbackSubtitles
+      }
+
+      const subtitle = finalSubtitles[finalSubtitles.length - 1].text
+
+      let generatedCorrections: Correction[] = finalSubtitles
         .filter((s) => s.isMe && Math.random() > 0.6)
         .slice(0, 3)
         .map((s) => ({
@@ -369,7 +446,21 @@ export const useAppStore = create<AppState & {
           note: '建议使用更礼貌/更准确的表达方式',
         }))
 
-      const report = generateFluencyReport(duration, state.liveSubtitles, generatedCorrections)
+      if (generatedCorrections.length < 2) {
+        const mySubs = finalSubtitles.filter((s) => s.isMe)
+        const needed = 2 - generatedCorrections.length
+        for (let i = 0; i < Math.min(needed, mySubs.length); i++) {
+          const s = mySubs[i]
+          generatedCorrections.push({
+            timestamp: s.timestamp,
+            original: s.text,
+            corrected: s.text.replace(/\bI'm\b/g, 'I am').replace(/\bgreat\b/g, 'wonderful'),
+            note: '可以尝试使用更正式/丰富的表达',
+          })
+        }
+      }
+
+      const report = generateFluencyReport(duration, finalSubtitles, generatedCorrections)
 
       const recording: PlaybackItem = {
         id: generateId('rec'),
@@ -378,7 +469,7 @@ export const useAppStore = create<AppState & {
         roomName: state.currentRoom?.name || '自由练习',
         roomId: state.currentRoom?.id || '',
         subtitle,
-        subtitles: state.liveSubtitles,
+        subtitles: finalSubtitles,
         corrections: generatedCorrections,
         report,
       }
@@ -787,11 +878,26 @@ export const useAppStore = create<AppState & {
       const state = get()
       const apt = state.appointments.find((a) => a.id === appointmentId)
       if (!apt) return null
+
+      let matchedTheme: Theme = 'daily'
+      const topic = apt.topic.toLowerCase()
+      if (/餐厅|点餐|咖啡|吃饭/.test(apt.topic) || /restaurant|cafe|coffee|food|dinner|lunch/.test(topic)) {
+        matchedTheme = 'restaurant'
+      } else if (/旅行|机场|问路|酒店/.test(apt.topic) || /travel|airport|hotel|trip|journey|direction/.test(topic)) {
+        matchedTheme = 'travel'
+      } else if (/面试|求职|工作/.test(apt.topic) || /interview|job|work|career|business/.test(topic)) {
+        matchedTheme = 'interview'
+      } else if (/购物|逛街|买/.test(apt.topic) || /shopping|buy|mall|store/.test(topic)) {
+        matchedTheme = 'shopping'
+      } else if (/商务|谈判|会议/.test(apt.topic) || /business|meeting|negotiation|conference/.test(topic)) {
+        matchedTheme = 'business'
+      }
+
       const room: Room = {
         id: generateId('room'),
         name: `${apt.partnerName} - ${apt.topic}`,
         language: apt.language,
-        theme: 'daily',
+        theme: matchedTheme,
         difficulty: 'intermediate',
         capacity: 2,
         current: 2,
@@ -801,6 +907,32 @@ export const useAppStore = create<AppState & {
       }
       get().enterRoom(room)
       return room
+    },
+
+    acceptAssignedTask: (assignedTaskId) => {
+      const state = get()
+      const assigned = state.assignedTasks.find((t) => t.id === assignedTaskId)
+      if (!assigned) return
+      state.updateAssignedTaskStatus(assignedTaskId, 'accepted')
+      state.setActiveTaskByCard(assigned.taskCardId)
+      set({ currentRound: assigned.roundNumber })
+      get().syncToWindows('currentRound', assigned.roundNumber)
+    },
+
+    toggleAIRecommendation: () => {
+      const state = get()
+      const newValue = !state.showAIRecommendation
+      set({ showAIRecommendation: newValue })
+      saveToStorage(get())
+      get().syncToWindows('showAIRecommendation', newValue)
+    },
+
+    updateHintPreferences: (prefs) => {
+      const state = get()
+      const newPrefs = { ...state.hintPreferences, ...prefs }
+      set({ hintPreferences: newPrefs })
+      saveToStorage(get())
+      get().syncToWindows('hintPreferences', newPrefs)
     },
   }
 })

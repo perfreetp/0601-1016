@@ -10,6 +10,7 @@ function TaskWindow() {
     assignedTasks,
     updateAssignedTaskStatus,
     createCustomTask,
+    acceptAssignedTask,
   } = useAppStore()
   const [selectedTask, setSelectedTask] = useState<TaskCard | null>(activeTask)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -52,7 +53,7 @@ function TaskWindow() {
   const getTaskCard = (taskCardId: string) => tasks.find((t) => t.id === taskCardId)
 
   const handleAccept = (id: string) => {
-    updateAssignedTaskStatus(id, 'accepted')
+    acceptAssignedTask(id)
   }
 
   const handleStart = (id: string) => {

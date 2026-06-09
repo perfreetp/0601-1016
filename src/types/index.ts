@@ -4,6 +4,12 @@ export type Difficulty = 'beginner' | 'intermediate' | 'advanced'
 
 export type Theme = 'restaurant' | 'travel' | 'interview' | 'shopping' | 'daily' | 'business'
 
+export interface HintPreferences {
+  difficulty: Difficulty
+  focusTypes: string[]
+  autoSpeak: boolean
+}
+
 export interface Avatar {
   id: string
   name: string
@@ -233,4 +239,6 @@ export interface AppState {
   customRooms: Room[]
   currentRound: number
   namedSpeakerId: string | null
+  showAIRecommendation: boolean
+  hintPreferences: HintPreferences
 }
