@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore, themes, difficulties } from '@/store'
-import type { TaskCard, Theme, Difficulty, TaskStatus } from '@/types'
+import type { TaskCard, Theme, Difficulty, TaskStatus, AssignedTask } from '@/types'
 
 function TaskWindow() {
   const {
@@ -8,12 +8,14 @@ function TaskWindow() {
     activeTask,
     currentRound,
     assignedTasks,
+    activeAssignedTaskId,
     updateAssignedTaskStatus,
     createCustomTask,
     acceptAssignedTask,
   } = useAppStore()
   const [selectedTask, setSelectedTask] = useState<TaskCard | null>(activeTask)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [viewRound, setViewRound] = useState<number>(currentRound)
   const [formData, setFormData] = useState({
     title: '',
     theme: 'daily' as Theme,
@@ -23,6 +25,26 @@ function TaskWindow() {
     keyVocabulary: '',
     keyPatterns: '',
   })
+
+  useEffect(() => {
+    setViewRound(currentRound)
+  }, [currentRound])
+
+  useEffect(() => {
+    if (activeAssignedTaskId) {
+      const assigned = assignedTasks.find((at) => at.id === activeAssignedTaskId)
+      if (assigned) {
+        const task = tasks.find((t) => t.id === assigned.taskCardId)
+        if (task) {
+          setSelectedTask(task)
+        }
+      }
+    }
+  }, [activeAssignedTaskId, assignedTasks, tasks])
+
+  const activeAssignedTask = activeAssignedTaskId
+    ? assignedTasks.find((at) => at.id === activeAssignedTaskId) || null
+    : null
 
   const getThemeLabel = (t: string) => themes.find((x) => x.value === t)?.label || t
   const getThemeIcon = (t: string) => themes.find((x) => x.value === t)?.icon || '📌'
@@ -54,6 +76,11 @@ function TaskWindow() {
 
   const handleAccept = (id: string) => {
     acceptAssignedTask(id)
+    const assigned = assignedTasks.find((at) => at.id === id)
+    if (assigned) {
+      const task = getTaskCard(assigned.taskCardId)
+      if (task) setSelectedTask(task)
+    }
   }
 
   const handleStart = (id: string) => {
@@ -62,6 +89,11 @@ function TaskWindow() {
 
   const handleComplete = (id: string) => {
     updateAssignedTaskStatus(id, 'completed')
+  }
+
+  const handleAssignedTaskClick = (at: AssignedTask) => {
+    const task = getTaskCard(at.taskCardId)
+    if (task) setSelectedTask(task)
   }
 
   const handleCreateTask = () => {
@@ -87,6 +119,18 @@ function TaskWindow() {
     })
   }
 
+  const maxRound = Math.max(currentRound, ...assignedTasks.map((at) => at.roundNumber), 1)
+
+  const getRoundTaskName = (round: number) => {
+    const roundAssigned = assignedTasks.find((at) => at.roundNumber === round)
+    if (roundAssigned) {
+      const task = getTaskCard(roundAssigned.taskCardId)
+      if (task) return task.title
+    }
+    if (activeTask) return activeTask.title
+    return '暂无任务'
+  }
+
   return (
     <div>
       <div className="window-header">
@@ -102,13 +146,49 @@ function TaskWindow() {
       </div>
 
       <div className="card mb-16" style={{ borderColor: 'var(--primary)' }}>
-        <div className="flex flex-between flex-wrap gap-12">
-          <div className="flex gap-24 flex-wrap">
+        <div className="flex flex-between flex-wrap gap-12 items-center">
+          <div className="flex gap-24 flex-wrap items-center">
             <div>
               <div className="text-sm text-muted">当前轮次</div>
-              <div className="font-bold text-xl mt-4" style={{ color: 'var(--primary)' }}>
-                🎯 第 {currentRound} 轮
+              <div className="flex items-center gap-12 mt-4">
+                <button
+                  className="btn btn-small btn-secondary"
+                  onClick={() => setViewRound(Math.max(1, viewRound - 1))}
+                  disabled={viewRound <= 1}
+                >
+                  ◀ 上一轮
+                </button>
+                <div
+                  style={{
+                    fontSize: 32,
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, var(--primary), var(--purple))',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    padding: '0 8px',
+                    minWidth: 60,
+                    textAlign: 'center',
+                  }}
+                >
+                  {viewRound}
+                </div>
+                <button
+                  className="btn btn-small btn-secondary"
+                  onClick={() => setViewRound(Math.min(maxRound, viewRound + 1))}
+                  disabled={viewRound >= maxRound}
+                >
+                  下一轮 ▶
+                </button>
               </div>
+              <div className="font-bold mt-4" style={{ color: 'var(--primary)' }}>
+                🎯 第 {viewRound} 轮 - {getRoundTaskName(viewRound)}
+              </div>
+              {viewRound !== currentRound && (
+                <div className="text-sm text-muted mt-4">
+                  (当前正在进行第 {currentRound} 轮)
+                </div>
+              )}
             </div>
             <div>
               <div className="text-sm text-muted">当前活跃任务</div>
@@ -243,11 +323,18 @@ function TaskWindow() {
             {assignedTasks.map((at) => {
               const task = getTaskCard(at.taskCardId)
               const statusInfo = getStatusLabel(at.status)
+              const isActive = at.id === activeAssignedTaskId
               return (
                 <div
                   key={at.id}
-                  className="card"
-                  style={{ borderLeft: `4px solid ${statusInfo.color}` }}
+                  className="card cursor-pointer"
+                  style={{
+                    borderLeft: `4px solid ${statusInfo.color}`,
+                    background: isActive ? 'rgba(108, 92, 231, 0.08)' : undefined,
+                    boxShadow: isActive ? '0 0 20px var(--glow)' : undefined,
+                    borderColor: isActive ? 'var(--primary)' : undefined,
+                  }}
+                  onClick={() => handleAssignedTaskClick(at)}
                 >
                   <div className="flex flex-between flex-wrap gap-8">
                     <div className="flex gap-12 flex-wrap">
@@ -256,7 +343,12 @@ function TaskWindow() {
                           {task ? `${getThemeIcon(task.theme)} ${task.title}` : `任务 #${at.taskCardId}`}
                         </div>
                         <div className="text-sm text-muted mt-4">
-                          👤 {at.assigneeName} · 📅 {at.assignedAt} · 🎯 第 {at.roundNumber} 轮
+                          👤 {at.assigneeName} · 🎯 第 {at.roundNumber} 轮
+                        </div>
+                        <div className="text-xs text-muted mt-4 flex flex-wrap gap-12">
+                          <span>📅 派发: {at.assignedAt}</span>
+                          {at.acceptedAt && <span>✅ 接受: {at.acceptedAt}</span>}
+                          {at.completedAt && <span>🎉 完成: {at.completedAt}</span>}
                         </div>
                       </div>
                       <span
@@ -268,12 +360,23 @@ function TaskWindow() {
                       >
                         {statusInfo.icon} {statusInfo.label}
                       </span>
+                      {isActive && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: 'linear-gradient(135deg, var(--primary), var(--purple))',
+                            color: 'white',
+                          }}
+                        >
+                          📌 当前
+                        </span>
+                      )}
                     </div>
                     <div className="flex gap-6">
                       {at.status === 'pending' && (
                         <button
                           className="btn btn-small btn-secondary"
-                          onClick={() => handleAccept(at.id)}
+                          onClick={(e) => { e.stopPropagation(); handleAccept(at.id) }}
                         >
                           ✅ 接受
                         </button>
@@ -281,7 +384,7 @@ function TaskWindow() {
                       {at.status === 'accepted' && (
                         <button
                           className="btn btn-small"
-                          onClick={() => handleStart(at.id)}
+                          onClick={(e) => { e.stopPropagation(); handleStart(at.id) }}
                         >
                           🔄 开始
                         </button>
@@ -289,7 +392,7 @@ function TaskWindow() {
                       {(at.status === 'in-progress' || at.status === 'accepted') && (
                         <button
                           className="btn btn-small btn-success"
-                          onClick={() => handleComplete(at.id)}
+                          onClick={(e) => { e.stopPropagation(); handleComplete(at.id) }}
                         >
                           🎉 标记完成
                         </button>
@@ -361,6 +464,21 @@ function TaskWindow() {
             <div className="task-card-detail">
               <div className="flex flex-between mb-16">
                 <div>
+                  {activeAssignedTask && activeAssignedTask.taskCardId === selectedTask.id && (
+                    <div className="mb-8">
+                      <span
+                        className="badge"
+                        style={{
+                          background: 'linear-gradient(135deg, var(--primary), var(--purple))',
+                          color: 'white',
+                          fontSize: 13,
+                          padding: '6px 14px',
+                        }}
+                      >
+                        📌 当前派发任务 · 第 {activeAssignedTask.roundNumber} 轮 · {getStatusLabel(activeAssignedTask.status).icon} {getStatusLabel(activeAssignedTask.status).label}
+                      </span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 36, marginBottom: 8 }}>
                     {getThemeIcon(selectedTask.theme)}
                   </div>

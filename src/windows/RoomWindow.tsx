@@ -32,6 +32,7 @@ function RoomWindow() {
     groupTimers,
     currentRound,
     namedSpeakerId,
+    selectedParticipantId,
     startRecording,
     stopRecording,
     addSubtitle,
@@ -42,16 +43,18 @@ function RoomWindow() {
     nameSpeaker,
     clearNamedSpeaker,
     nextTurn,
+    selectParticipant,
+    startNewRound,
   } = useAppStore()
   const [muted, setMuted] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'group'>('grid')
   const [elapsed, setElapsed] = useState(0)
   const [showSuccess, setShowSuccess] = useState(false)
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null)
   const [selectedTaskCardId, setSelectedTaskCardId] = useState<string>(tasks[0]?.id || '')
   const [taskRoundNumber, setTaskRoundNumber] = useState<number>(1)
   const [groupTimerDurations, setGroupTimerDurations] = useState<{ [key: number]: number }>({ 1: 300, 2: 300 })
   const [groupRemainingTimes, setGroupRemainingTimes] = useState<{ [key: number]: number }>({ 1: 300, 2: 300 })
+  const [showNewRoundConfirm, setShowNewRoundConfirm] = useState(false)
   const timerRef = useRef<number | null>(null)
   const subtitleIdxRef = useRef(0)
   const groupTimerIntervalRef = useRef<number | null>(null)
@@ -117,10 +120,11 @@ function RoomWindow() {
   const getThemeLabel = (t: string) => themes.find((x) => x.value === t)?.label || t
   const getThemeIcon = (t: string) => themes.find((x) => x.value === t)?.icon || '📌'
   const getDiffLabel = (d: string) => difficulties.find((x) => x.value === d)?.label || d
+  const getDiffColor = (d: string) => difficulties.find((x) => x.value === d)?.color || '#666'
 
   const getStatusLabel = (s: TaskStatus) => {
     switch (s) {
-      case 'pending': return { label: '待处理', color: '#FF9800' }
+      case 'pending': return { label: '待接受', color: '#FF9800' }
       case 'accepted': return { label: '已接受', color: '#2196F3' }
       case 'in-progress': return { label: '进行中', color: '#9C27B0' }
       case 'completed': return { label: '已完成', color: '#4CAF50' }
@@ -192,6 +196,35 @@ function RoomWindow() {
     stopGroupTimer(groupId)
   }
 
+  const handleSeatClick = (participantId: string) => {
+    if (selectedParticipantId === participantId) {
+      selectParticipant(null)
+    } else {
+      selectParticipant(participantId)
+    }
+  }
+
+  const handleStartNewRound = () => {
+    startNewRound()
+    setShowNewRoundConfirm(false)
+  }
+
+  const selectedParticipant = selectedParticipantId
+    ? participants.find((p) => p.id === selectedParticipantId) || null
+    : null
+
+  const selectedParticipantTasks = selectedParticipantId
+    ? assignedTasks.filter((at) => at.assigneeId === selectedParticipantId)
+    : []
+
+  const currentParticipantTask = selectedParticipantTasks.find((at) => at.roundNumber === currentRound)
+    || selectedParticipantTasks[0]
+    || null
+
+  const currentTaskCard = currentParticipantTask
+    ? tasks.find((t) => t.id === currentParticipantTask.taskCardId) || null
+    : null
+
   const emptySeats = Array.from({ length: 8 }, (_, i) => i + 1).filter(
     (n) => !participants.some((p) => p.seat === n)
   )
@@ -199,74 +232,114 @@ function RoomWindow() {
   const me = participants.find((p) => p.id === 'u1')
   const isHost = me?.isHost
 
-  const renderParticipant = (p: Participant) => (
-    <div
-      key={p.id}
-      className={`seat ${me?.id === p.id ? 'current' : ''} ${p.id === namedSpeakerId ? 'speaking named' : ''} ${p.id === 'u3' && isRecording && p.id !== namedSpeakerId ? 'speaking' : ''}`}
-      onClick={() => setSelectedParticipantId(p.id)}
-      style={selectedParticipantId === p.id ? { outline: '3px solid var(--primary)', outlineOffset: '2px' } : undefined}
-    >
-      {p.handRaised && <span className="raised-hand">✋</span>}
-      {p.isHost && (
-        <span
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            fontSize: 14,
-            background: 'var(--warning)',
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: 999,
-            fontWeight: 600,
-          }}
-        >
-          👑 主持
-        </span>
-      )}
-      <div className="avatar avatar-small" style={{ background: p.avatar.color }}>
-        {p.avatar.emoji}
-        {p.defaultEmoji && (
+  const roundNumbers = Array.from(new Set(assignedTasks.map((at) => at.roundNumber))).sort((a, b) => a - b)
+  if (!roundNumbers.includes(currentRound)) roundNumbers.push(currentRound)
+  roundNumbers.sort((a, b) => a - b)
+
+  const getRoundStats = (round: number) => {
+    const roundTasks = assignedTasks.filter((at) => at.roundNumber === round)
+    const completed = roundTasks.filter((at) => at.status === 'completed').length
+    return { total: roundTasks.length, completed }
+  }
+
+  const getParticipantStatusForRound = (participantId: string, round: number) => {
+    const at = assignedTasks.find((t) => t.assigneeId === participantId && t.roundNumber === round)
+    return at?.status || null
+  }
+
+  const renderParticipant = (p: Participant) => {
+    const isSelected = selectedParticipantId === p.id
+    const isNamedSpeaker = p.id === namedSpeakerId
+    return (
+      <div
+        key={p.id}
+        className={`seat ${me?.id === p.id ? 'current' : ''} ${isNamedSpeaker ? 'speaking named' : ''} ${p.id === 'u3' && isRecording && !isNamedSpeaker ? 'speaking' : ''}`}
+        onClick={() => handleSeatClick(p.id)}
+        style={{
+          outline: isSelected && !isNamedSpeaker ? '3px solid var(--accent)' : undefined,
+          outlineOffset: isSelected && !isNamedSpeaker ? '2px' : undefined,
+          boxShadow: isSelected && !isNamedSpeaker ? '0 0 24px rgba(255, 152, 0, 0.4)' : undefined,
+        }}
+      >
+        {p.handRaised && <span className="raised-hand">✋</span>}
+        {p.isHost && (
           <span
             style={{
               position: 'absolute',
-              bottom: -4,
-              right: -4,
-              fontSize: 16,
-              background: 'var(--bg-card)',
-              borderRadius: '50%',
-              padding: 2,
-              border: '2px solid var(--border)',
+              top: 8,
+              right: 8,
+              fontSize: 14,
+              background: 'var(--warning)',
+              color: 'white',
+              padding: '2px 8px',
+              borderRadius: 999,
+              fontWeight: 600,
             }}
           >
-            {p.defaultEmoji}
+            👑 主持
           </span>
         )}
-      </div>
-      <div className="text-sm font-medium mt-8">{p.nickname}</div>
-      {p.nameplate && (
-        <div
-          className="text-xs text-muted mt-4"
-          style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 8px' }}
-          title={p.nameplate}
-        >
-          {p.nameplate}
+        {isSelected && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              fontSize: 14,
+              background: 'var(--accent)',
+              color: 'white',
+              padding: '2px 8px',
+              borderRadius: 999,
+              fontWeight: 600,
+            }}
+          >
+            👁️ 查看中
+          </span>
+        )}
+        <div className="avatar avatar-small" style={{ background: p.avatar.color }}>
+          {p.avatar.emoji}
+          {p.defaultEmoji && (
+            <span
+              style={{
+                position: 'absolute',
+                bottom: -4,
+                right: -4,
+                fontSize: 16,
+                background: 'var(--bg-card)',
+                borderRadius: '50%',
+                padding: 2,
+                border: '2px solid var(--border)',
+              }}
+            >
+              {p.defaultEmoji}
+            </span>
+          )}
         </div>
-      )}
-      <div className="flex gap-4 mt-8">
-        <span className="badge badge-blue">G{p.group}</span>
-        {p.id === namedSpeakerId && <span className="badge badge-red">🎤 点名发言</span>}
-        {p.id === 'u3' && isRecording && p.id !== namedSpeakerId && <span className="badge badge-purple">🎤 说话中</span>}
+        <div className="text-sm font-medium mt-8">{p.nickname}</div>
+        {p.nameplate && (
+          <div
+            className="text-xs text-muted mt-4"
+            style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 8px' }}
+            title={p.nameplate}
+          >
+            {p.nameplate}
+          </div>
+        )}
+        <div className="flex gap-4 mt-8">
+          <span className="badge badge-blue">G{p.group}</span>
+          {isNamedSpeaker && <span className="badge badge-red">🎤 点名发言</span>}
+          {p.id === 'u3' && isRecording && !isNamedSpeaker && <span className="badge badge-purple">🎤 说话中</span>}
+        </div>
+        <div
+          className={`mic-icon ${p.muted ? 'mic-off' : 'mic-on'}`}
+          onClick={(e) => { e.stopPropagation(); toggleMute(p.id) }}
+          title={p.muted ? '点击解除静音' : '点击静音'}
+        >
+          {p.muted ? '🔇' : '🎙️'}
+        </div>
       </div>
-      <div
-        className={`mic-icon ${p.muted ? 'mic-off' : 'mic-on'}`}
-        onClick={(e) => { e.stopPropagation(); toggleMute(p.id) }}
-        title={p.muted ? '点击解除静音' : '点击静音'}
-      >
-        {p.muted ? '🔇' : '🎙️'}
-      </div>
-    </div>
-  )
+    )
+  }
 
   const group1 = participants.filter((p) => p.group === 1)
   const group2 = participants.filter((p) => p.group === 2)
@@ -369,6 +442,52 @@ function RoomWindow() {
         </div>
       )}
 
+      {showNewRoundConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+          }}
+          onClick={() => setShowNewRoundConfirm(false)}
+        >
+          <div
+            className="card"
+            style={{
+              width: 400,
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold mb-12">🔄 开始新一轮？</h3>
+            <p className="text-secondary mb-16">
+              当前轮次（第 {currentRound} 轮）将被归档，所有字幕和任务进度将被保存。确定要开始新一轮吗？
+            </p>
+            <div className="flex gap-8 justify-end">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowNewRoundConfirm(false)}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-warning"
+                onClick={handleStartNewRound}
+              >
+                ✅ 确认开始
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="window-header">
         <div>
           <div className="flex gap-12 items-center">
@@ -437,13 +556,13 @@ function RoomWindow() {
       {isHost && (
         <div className="card mb-16">
           <h3 className="font-bold mb-12">🎙️ 主持人工具栏</h3>
-          <div className="grid grid-4 gap-12">
+          <div className="grid grid-5 gap-12">
             <div>
               <label className="text-sm text-muted mb-4 block">选择成员</label>
               <select
                 className="input"
                 value={selectedParticipantId || ''}
-                onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                onChange={(e) => selectParticipant(e.target.value || null)}
               >
                 <option value="">-- 点击座位或选择成员 --</option>
                 {participants.map((p) => (
@@ -484,9 +603,142 @@ function RoomWindow() {
                 ✖️ 清除点名
               </button>
             </div>
+            <div>
+              <label className="text-sm text-muted mb-4 block">轮次管理</label>
+              <button
+                className="btn btn-warning"
+                onClick={() => setShowNewRoundConfirm(true)}
+                style={{ width: '100%' }}
+              >
+                🔄 新一轮
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      <div className="card mb-16">
+        <h3 className="font-bold mb-12">📊 轮次进度面板</h3>
+        <div className="flex flex-col gap-12">
+          {roundNumbers.map((round) => {
+            const stats = getRoundStats(round)
+            const roundTask = assignedTasks.find((at) => at.roundNumber === round)
+            const taskCard = roundTask ? tasks.find((t) => t.id === roundTask.taskCardId) : null
+            const isCurrent = round === currentRound
+            return (
+              <div
+                key={round}
+                className="card"
+                style={{
+                  background: isCurrent ? 'rgba(108, 92, 231, 0.06)' : undefined,
+                  borderColor: isCurrent ? 'var(--primary)' : undefined,
+                }}
+              >
+                <div className="flex flex-between flex-wrap gap-12 mb-12 items-center">
+                  <div className="flex items-center gap-12">
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 800,
+                        background: isCurrent
+                          ? 'linear-gradient(135deg, var(--primary), var(--purple))'
+                          : 'var(--bg-input)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: isCurrent ? 'transparent' : 'var(--text-secondary)',
+                        backgroundClip: 'text',
+                        minWidth: 50,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {round}
+                    </div>
+                    <div>
+                      <div className="font-bold">
+                        第 {round} 轮
+                        {taskCard && ` - ${getThemeIcon(taskCard.theme)} ${taskCard.title}`}
+                      </div>
+                      {isCurrent && (
+                        <span className="badge mt-4" style={{ background: 'var(--primary)', color: 'white', fontSize: 11 }}>
+                          🎯 当前轮次
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-12">
+                    <div
+                      style={{
+                        width: 120,
+                        height: 8,
+                        background: 'var(--bg-input)',
+                        borderRadius: 999,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${stats.total > 0 ? (stats.completed / stats.total) * 100 : 0}%`,
+                          height: '100%',
+                          background: 'linear-gradient(90deg, var(--success), var(--primary))',
+                          borderRadius: 999,
+                          transition: 'width 0.3s ease',
+                        }}
+                      />
+                    </div>
+                    <span className="text-sm font-bold">
+                      {stats.completed} / {stats.total} 已完成
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-8">
+                  {participants.map((p) => {
+                    const status = getParticipantStatusForRound(p.id, round)
+                    const statusInfo = status ? getStatusLabel(status) : null
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-6"
+                        style={{
+                          padding: '6px 12px',
+                          background: 'var(--bg-input)',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 18 }}>{p.avatar.emoji}</span>
+                        <span className="text-sm font-medium">{p.nickname}</span>
+                        {statusInfo ? (
+                          <span
+                            className="badge"
+                            style={{
+                              background: `${statusInfo.color}20`,
+                              color: statusInfo.color,
+                              fontSize: 11,
+                              padding: '2px 8px',
+                            }}
+                          >
+                            {statusInfo.label}
+                          </span>
+                        ) : (
+                          <span
+                            className="badge"
+                            style={{
+                              background: 'var(--bg-dark)',
+                              color: 'var(--text-muted)',
+                              fontSize: 11,
+                              padding: '2px 8px',
+                            }}
+                          >
+                            未派发
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       <div className="flex flex-between mb-16">
         <div className="flex gap-8">
@@ -572,6 +824,147 @@ function RoomWindow() {
         </div>
 
         <div className="flex flex-col gap-12">
+          {selectedParticipant && (
+            <div
+              className="card"
+              style={{
+                borderColor: 'var(--accent)',
+                boxShadow: '0 0 20px rgba(255, 152, 0, 0.15)',
+              }}
+            >
+              <div className="flex flex-between mb-12">
+                <h3 className="font-bold">👁️ 成员详情</h3>
+                <button
+                  className="btn btn-small btn-secondary"
+                  onClick={() => selectParticipant(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex items-center gap-12 mb-16">
+                <div
+                  className="avatar"
+                  style={{
+                    background: selectedParticipant.avatar.color,
+                    width: 56,
+                    height: 56,
+                    fontSize: 28,
+                    position: 'relative',
+                  }}
+                >
+                  {selectedParticipant.avatar.emoji}
+                  {selectedParticipant.defaultEmoji && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: -6,
+                        right: -6,
+                        fontSize: 18,
+                        background: 'var(--bg-card)',
+                        borderRadius: '50%',
+                        padding: 2,
+                        border: '2px solid var(--border)',
+                      }}
+                    >
+                      {selectedParticipant.defaultEmoji}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="font-bold text-lg">{selectedParticipant.nickname}</div>
+                  {selectedParticipant.nameplate && (
+                    <div className="text-sm text-muted">{selectedParticipant.nameplate}</div>
+                  )}
+                  <div className="flex gap-4 mt-4">
+                    <span className="badge badge-blue">G{selectedParticipant.group}</span>
+                    {selectedParticipant.isHost && <span className="badge badge-yellow">👑 主持</span>}
+                  </div>
+                </div>
+              </div>
+
+              {currentTaskCard ? (
+                <div>
+                  <div className="text-sm text-muted mb-4">📋 当前任务（第 {currentParticipantTask?.roundNumber} 轮）</div>
+                  <div
+                    className="card"
+                    style={{ background: 'var(--bg-input)', margin: 0, marginBottom: 12 }}
+                  >
+                    <div className="flex flex-between items-start mb-8">
+                      <div>
+                        <div className="font-bold">
+                          {getThemeIcon(currentTaskCard.theme)} {currentTaskCard.title}
+                        </div>
+                        <div className="flex gap-4 mt-4">
+                          <span className="badge badge-purple">{getThemeLabel(currentTaskCard.theme)}</span>
+                          <span
+                            className="badge"
+                            style={{
+                              background: `${getDiffColor(currentTaskCard.difficulty)}20`,
+                              color: getDiffColor(currentTaskCard.difficulty),
+                            }}
+                          >
+                            {getDiffLabel(currentTaskCard.difficulty)}
+                          </span>
+                          {currentParticipantTask && (
+                            <span
+                              className="badge"
+                              style={{
+                                background: `${getStatusLabel(currentParticipantTask.status).color}20`,
+                                color: getStatusLabel(currentParticipantTask.status).color,
+                              }}
+                            >
+                              {getStatusLabel(currentParticipantTask.status).label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-12">
+                    <div className="text-sm text-muted mb-6">📚 关键词汇</div>
+                    <div className="flex flex-wrap gap-6">
+                      {currentTaskCard.keyVocabulary.slice(0, 5).map((word, i) => (
+                        <span
+                          key={i}
+                          className="badge badge-blue"
+                          style={{ fontSize: 12, padding: '4px 10px' }}
+                        >
+                          {word}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-muted mb-6">✨ 关键句型</div>
+                    <div className="flex flex-col gap-6">
+                      {currentTaskCard.keyPatterns.slice(0, 3).map((pattern, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(108, 92, 231, 0.1)',
+                            borderLeft: '3px solid var(--primary)',
+                            borderRadius: '0 6px 6px 0',
+                            fontSize: 12,
+                          }}
+                        >
+                          {pattern}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-muted py-12">
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+                  <div className="text-sm">该成员暂无派发任务</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {isHost && (
             <div className="card">
               <h3 className="font-bold mb-12">📝 派发任务</h3>
@@ -595,7 +988,7 @@ function RoomWindow() {
                   <select
                     className="input"
                     value={selectedParticipantId || ''}
-                    onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                    onChange={(e) => selectParticipant(e.target.value || null)}
                   >
                     <option value="">-- 选择成员 --</option>
                     {participants.map((p) => (
@@ -671,8 +1064,10 @@ function RoomWindow() {
                       {statusInfo.label}
                     </span>
                   </div>
-                  <div className="text-xs text-muted mb-8">
-                    派发时间: {at.assignedAt}
+                  <div className="text-xs text-muted mb-8 flex flex-wrap gap-12">
+                    <span>📅 派发: {at.assignedAt}</span>
+                    {at.acceptedAt && <span>✅ 接受: {at.acceptedAt}</span>}
+                    {at.completedAt && <span>🎉 完成: {at.completedAt}</span>}
                   </div>
                   <div className="flex gap-4 flex-wrap">
                     <select
@@ -680,7 +1075,7 @@ function RoomWindow() {
                       value={at.status}
                       onChange={(e) => updateAssignedTaskStatus(at.id, e.target.value as TaskStatus)}
                     >
-                      <option value="pending">待处理</option>
+                      <option value="pending">待接受</option>
                       <option value="accepted">已接受</option>
                       <option value="in-progress">进行中</option>
                       <option value="completed">已完成</option>
@@ -761,6 +1156,11 @@ function RoomWindow() {
                     {sub.speakerEmoji && <span className="ml-4">{sub.speakerEmoji}</span>}
                     :
                   </span>
+                  {sub.roundNumber && (
+                    <span className="badge" style={{ fontSize: 10, padding: '1px 6px' }}>
+                      R{sub.roundNumber}
+                    </span>
+                  )}
                 </div>
                 <div className="text-secondary" style={{ paddingLeft: 4 }}>
                   {sub.text}

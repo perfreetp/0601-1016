@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore, difficulties, themes } from '@/store'
 import type { Hint, CollectionType, Difficulty, HintPreferences } from '@/types'
 
@@ -8,6 +8,7 @@ type TabType = 'hints' | 'saved'
 function HintWindow() {
   const {
     hints,
+    generatedHints,
     activeTask,
     savedItems,
     saveItem,
@@ -18,6 +19,8 @@ function HintWindow() {
     toggleAIRecommendation,
     hintPreferences,
     updateHintPreferences,
+    generateHintsForTask,
+    currentRound,
   } = useAppStore()
   const [activeTab, setActiveTab] = useState<TabType>('hints')
   const [filter, setFilter] = useState<HintType>('all')
@@ -30,7 +33,21 @@ function HintWindow() {
     autoSpeak: hintPreferences.autoSpeak,
   })
 
-  const filteredHints = filter === 'all' ? hints : hints.filter((h) => h.type === filter)
+  useEffect(() => {
+    if (activeTask && showAIRecommendation) {
+      generateHintsForTask(activeTask.id, hintPreferences.difficulty, hintPreferences.focusTypes)
+    }
+  }, [activeTask?.id])
+
+  const filterByFocusTypes = (hintList: Hint[]) => {
+    if (hintPreferences.focusTypes.length === 0) return hintList
+    return hintList.filter((h) => hintPreferences.focusTypes.includes(h.type))
+  }
+
+  const displayHints = filter === 'all' ? hints : hints.filter((h) => h.type === filter)
+  const displayGeneratedHints = filter === 'all'
+    ? filterByFocusTypes(generatedHints)
+    : filterByFocusTypes(generatedHints).filter((h) => h.type === filter)
 
   const getTypeLabel = (t: string) => {
     switch (t) {
@@ -54,6 +71,14 @@ function HintWindow() {
       utter.lang = 'en-US'
       utter.rate = 0.8
       window.speechSynthesis.speak(utter)
+    }
+  }
+
+  const handleHintClick = (hint: Hint, isGenerated: boolean) => {
+    const newSelected = selectedHint?.id === hint.id ? null : hint
+    setSelectedHint(newSelected)
+    if (hintPreferences.autoSpeak && newSelected && isGenerated) {
+      speak(hint.content)
     }
   }
 
@@ -83,6 +108,9 @@ function HintWindow() {
 
   const handleSavePrefs = () => {
     updateHintPreferences(prefForm)
+    if (activeTask) {
+      generateHintsForTask(activeTask.id, prefForm.difficulty, prefForm.focusTypes)
+    }
     setShowPrefModal(false)
   }
 
@@ -113,8 +141,28 @@ function HintWindow() {
         <div className="card mb-16" style={{ borderColor: 'var(--primary)' }}>
           <div className="flex flex-between">
             <div>
-              <div className="text-sm text-muted">当前关联任务</div>
-              <div className="font-bold text-lg mt-4">{getThemeIcon(activeTask.theme)} {activeTask.title}</div>
+              <div className="text-sm text-muted">当前任务{currentRound > 0 ? ` · 第 ${currentRound} 轮` : ''}</div>
+              <div className="font-bold text-lg mt-4">
+                {getThemeIcon(activeTask.theme)} {activeTask.title}
+                <span
+                  className="badge ml-8"
+                  style={{
+                    background: `${difficulties.find((d) => d.value === activeTask.difficulty)?.color || '#FF9800'}20`,
+                    color: difficulties.find((d) => d.value === activeTask.difficulty)?.color || '#FF9800',
+                    fontSize: 12,
+                  }}
+                >
+                  {difficulties.find((d) => d.value === activeTask.difficulty)?.label || activeTask.difficulty}
+                </span>
+              </div>
+              <div className="text-sm text-secondary mt-4" style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}>
+                {activeTask.description}
+              </div>
             </div>
             <button className="btn btn-small btn-secondary" onClick={() => setShowTaskModal(true)}>
               切换任务
@@ -145,7 +193,7 @@ function HintWindow() {
               className={`tab-item ${filter === 'all' ? 'active' : ''}`}
               onClick={() => setFilter('all')}
             >
-              全部 ({hints.length})
+              全部 ({hints.length + generatedHints.length})
             </button>
             <button
               className={`tab-item ${filter === 'vocabulary' ? 'active' : ''}`}
@@ -168,7 +216,112 @@ function HintWindow() {
           </div>
 
           <div className="flex flex-col gap-10">
-            {filteredHints.map((hint) => {
+            {displayGeneratedHints.map((hint) => {
+              const typeInfo = getTypeLabel(hint.type)
+              const isSelected = selectedHint?.id === hint.id
+              return (
+                <div
+                  key={hint.id}
+                  className="hint-card cursor-pointer"
+                  style={{
+                    borderLeftColor: typeInfo.color,
+                    background: isSelected ? 'var(--bg-hover)' : undefined,
+                    borderColor: 'var(--accent)',
+                  }}
+                  onClick={() => handleHintClick(hint, true)}
+                >
+                  <div className="flex flex-between">
+                    <div className="flex gap-12 flex-1">
+                      <span style={{ fontSize: 28 }}>{typeInfo.icon}</span>
+                      <div className="flex-1">
+                        <div className="flex gap-8 mb-4 flex-wrap items-center">
+                          <span
+                            className="badge"
+                            style={{
+                              background: `${typeInfo.color}20`,
+                              color: typeInfo.color,
+                            }}
+                          >
+                            {typeInfo.label}
+                          </span>
+                          <span
+                            className="badge"
+                            style={{
+                              background: 'rgba(253, 203, 110, 0.2)',
+                              color: '#FDCB6E',
+                            }}
+                          >
+                            🎯 任务推荐
+                          </span>
+                          <span className="font-bold text-lg">{hint.content}</span>
+                        </div>
+                        <div className="text-secondary">{hint.translation}</div>
+                        {isSelected && hint.example && (
+                          <div
+                            className="mt-12"
+                            style={{
+                              padding: '10px 14px',
+                              background: 'rgba(0, 206, 201, 0.1)',
+                              borderRadius: 8,
+                              fontSize: 14,
+                            }}
+                          >
+                            <span className="text-muted">例句: </span>
+                            <span className="text-secondary">{hint.example}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-6 flex-wrap items-start">
+                      <button
+                        className="btn btn-small btn-secondary"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          speak(hint.content)
+                        }}
+                      >
+                        🔊 朗读
+                      </button>
+                      {(hint.type === 'vocabulary' || hint.type === 'pronunciation') && (
+                        <button
+                          className="btn btn-small"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSave(hint, 'vocabulary')
+                          }}
+                        >
+                          ⭐ 收藏词汇
+                        </button>
+                      )}
+                      {hint.type === 'pattern' && (
+                        <button
+                          className="btn btn-small"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSave(hint, 'pattern')
+                          }}
+                        >
+                          ⭐ 收藏句型
+                        </button>
+                      )}
+                      {hint.type === 'vocabulary' && (
+                        <button
+                          className="btn btn-small btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSave(hint, 'pattern')
+                          }}
+                        >
+                          ✨ 收藏句型
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {displayHints.map((hint) => {
               const typeInfo = getTypeLabel(hint.type)
               const isSelected = selectedHint?.id === hint.id
               return (
@@ -179,7 +332,7 @@ function HintWindow() {
                     borderLeftColor: typeInfo.color,
                     background: isSelected ? 'var(--bg-hover)' : undefined,
                   }}
-                  onClick={() => setSelectedHint(isSelected ? null : hint)}
+                  onClick={() => handleHintClick(hint, false)}
                 >
                   <div className="flex flex-between">
                     <div className="flex gap-12 flex-1">
@@ -276,11 +429,18 @@ function HintWindow() {
             ) : (
               <>
                 <p className="text-secondary mb-16">
-                  基于你当前的对话场景，AI 会实时推荐最相关的词汇和句型。
+                  基于你当前的对话场景和任务，AI 会实时推荐最相关的词汇和句型。
                 </p>
-                <div className="input mb-12" style={{ textAlign: 'center', padding: '14px' }}>
-                  💡 正在监听你的对话...
-                </div>
+                {activeTask && (
+                  <div className="input mb-12" style={{ textAlign: 'center', padding: '14px' }}>
+                    💡 当前任务「{activeTask.title}」已生成 {displayGeneratedHints.length} 条推荐提示
+                  </div>
+                )}
+                {!activeTask && (
+                  <div className="input mb-12" style={{ textAlign: 'center', padding: '14px' }}>
+                    💡 正在监听你的对话...
+                  </div>
+                )}
                 <div className="flex gap-8">
                   <button className="btn btn-secondary" onClick={toggleAIRecommendation}>
                     🔕 关闭推荐
@@ -343,7 +503,12 @@ function HintWindow() {
                           </div>
                         )}
                         <div className="text-sm text-muted mt-8">
-                          📅 {item.createdAt} · 📍 {item.source}
+                          📅 {item.createdAt}
+                          {item.roundNumber && item.taskTitle ? (
+                            <span className="ml-8">📍 第 {item.roundNumber} 轮 - {item.taskTitle}任务</span>
+                          ) : (
+                            <span className="ml-8">📍 {item.source}</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -483,7 +648,7 @@ function HintWindow() {
             </div>
 
             <div className="mb-16">
-              <label className="text-sm text-muted mb-8 block">关注类型</label>
+              <label className="text-sm text-muted mb-8 block">关注类型（仅显示选中类型的推荐）</label>
               <div className="flex flex-col gap-8">
                 {[
                   { value: 'vocabulary', label: '📚 词汇' },
@@ -512,7 +677,7 @@ function HintWindow() {
                   checked={prefForm.autoSpeak}
                   onChange={(e) => setPrefForm({ ...prefForm, autoSpeak: e.target.checked })}
                 />
-                <span>自动朗读</span>
+                <span>自动朗读（点击任务推荐提示时自动发音）</span>
               </label>
             </div>
 

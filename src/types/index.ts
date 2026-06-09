@@ -66,6 +66,21 @@ export interface AssignedTask {
   assignedAt: string
   status: TaskStatus
   roundNumber: number
+  acceptedAt?: string
+  completedAt?: string
+}
+
+export interface RoundArchive {
+  roundNumber: number
+  taskCardId: string
+  taskTitle: string
+  taskTheme: Theme
+  startTimestamp: number
+  endTimestamp: number
+  assigneeIds: string[]
+  subtitles: SubtitleLine[]
+  corrections: Correction[]
+  report?: FluencyReport
 }
 
 export interface GroupTimer {
@@ -92,6 +107,8 @@ export interface SavedItem {
   example?: string
   source: string
   createdAt: string
+  roundNumber?: number
+  taskTitle?: string
 }
 
 export interface FluencyReport {
@@ -131,6 +148,8 @@ export interface Correction {
   original: string
   corrected: string
   note: string
+  roundNumber?: number
+  speakerId?: string
 }
 
 export interface SubtitleLine {
@@ -142,6 +161,7 @@ export interface SubtitleLine {
   text: string
   timestamp: number
   isMe: boolean
+  roundNumber?: number
 }
 
 export interface PlaybackItem {
@@ -154,6 +174,7 @@ export interface PlaybackItem {
   subtitles: SubtitleLine[]
   corrections: Correction[]
   report?: FluencyReport
+  rounds: RoundArchive[]
 }
 
 export interface Friend {
@@ -221,7 +242,9 @@ export interface AppState {
   participants: Participant[]
   tasks: TaskCard[]
   activeTask: TaskCard | null
+  activeAssignedTaskId: string | null
   hints: Hint[]
+  generatedHints: Hint[]
   liveSubtitles: SubtitleLine[]
   recordings: PlaybackItem[]
   isRecording: boolean
@@ -239,6 +262,9 @@ export interface AppState {
   customRooms: Room[]
   currentRound: number
   namedSpeakerId: string | null
+  selectedParticipantId: string | null
+  roundArchives: RoundArchive[]
+  currentRoundStartTs: number | null
   showAIRecommendation: boolean
   hintPreferences: HintPreferences
 }

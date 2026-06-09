@@ -25,6 +25,7 @@ import type {
   GroupTimer,
   FluencyReport,
   HintPreferences,
+  RoundArchive,
 } from '@/types'
 
 const STORAGE_KEY = 'metaverse-language-state'
@@ -100,6 +101,69 @@ const sampleGroupTimers: GroupTimer[] = [
   { groupId: 2, startTime: null, duration: 300, running: false },
 ]
 
+const sampleRounds: RoundArchive[] = [
+  {
+    roundNumber: 1,
+    taskCardId: 't1',
+    taskTitle: '餐厅点餐',
+    taskTheme: 'restaurant',
+    startTimestamp: 0,
+    endTimestamp: 600,
+    assigneeIds: ['u1', 'u2'],
+    subtitles: [
+      { id: 'rs1', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Waiter: Good evening! Do you have a reservation?', timestamp: 0, isMe: false, roundNumber: 1 },
+      { id: 'rs2', speaker: '我', speakerId: 'u1', speakerAvatar: avatars[0], speakerEmoji: '😊', text: "Yes, under the name Smith. I'd like a table for two.", timestamp: 15, isMe: true, roundNumber: 1 },
+      { id: 'rs3', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Waiter: Right this way please. Here are your menus.', timestamp: 30, isMe: false, roundNumber: 1 },
+    ],
+    corrections: [
+      { timestamp: 15, original: 'I want eat steak', corrected: "I'd like to eat a steak", note: "使用 I'd like to 更礼貌，steak 前加冠词 a", roundNumber: 1 },
+    ],
+    report: {
+      overallScore: 75, pronunciationScore: 78, grammarScore: 70, fluencyScore: 76, vocabularyScore: 72,
+      highlights: ['发音清晰，表达流畅', '正确使用了点餐核心词汇'],
+      suggestions: ['注意 "I want" 和 "I\'d like to" 的使用场景'],
+      totalWords: 85, uniqueWords: 32, speakingTime: 240,
+    },
+  },
+  {
+    roundNumber: 2,
+    taskCardId: 't1',
+    taskTitle: '餐厅点餐',
+    taskTheme: 'restaurant',
+    startTimestamp: 600,
+    endTimestamp: 1200,
+    assigneeIds: ['u1', 'u2'],
+    subtitles: [
+      { id: 'rs4', speaker: '我', speakerId: 'u1', speakerAvatar: avatars[0], speakerEmoji: '😊', text: "I'd like to order the steak, medium rare please.", timestamp: 610, isMe: true, roundNumber: 2 },
+      { id: 'rs5', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Waiter: Excellent choice! Would you like any appetizers?', timestamp: 625, isMe: false, roundNumber: 2 },
+      { id: 'rs6', speaker: '我', speakerId: 'u1', speakerAvatar: avatars[0], speakerEmoji: '😊', text: 'No, thank you. Just the steak and a glass of red wine.', timestamp: 640, isMe: true, roundNumber: 2 },
+    ],
+    corrections: [],
+    report: {
+      overallScore: 82, pronunciationScore: 85, grammarScore: 80, fluencyScore: 83, vocabularyScore: 81,
+      highlights: ['语法正确，表达自然', '词汇运用恰当'],
+      suggestions: ['可以尝试更多配菜相关词汇'],
+      totalWords: 92, uniqueWords: 38, speakingTime: 280,
+    },
+  },
+  {
+    roundNumber: 3,
+    taskCardId: 't1',
+    taskTitle: '餐厅点餐',
+    taskTheme: 'restaurant',
+    startTimestamp: 1200,
+    endTimestamp: 1800,
+    assigneeIds: ['u1', 'u2'],
+    subtitles: [
+      { id: 'rs7', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Waiter: How was everything? Would you like the bill?', timestamp: 1210, isMe: false, roundNumber: 3 },
+      { id: 'rs8', speaker: '我', speakerId: 'u1', speakerAvatar: avatars[0], speakerEmoji: '😊', text: 'Yes, please. How many is it?', timestamp: 1225, isMe: true, roundNumber: 3 },
+    ],
+    corrections: [
+      { timestamp: 1225, original: 'How many is it?', corrected: 'How much is it?', note: '价格用 much，数量用 many', roundNumber: 3 },
+    ],
+  },
+]
+
 const sampleRecordings: PlaybackItem[] = [
   {
     id: 'r1', date: '2026-06-09 20:30', duration: 1800, roomName: '英语口语-餐厅点餐-中级', roomId: 'r2',
@@ -114,6 +178,7 @@ const sampleRecordings: PlaybackItem[] = [
       suggestions: ['注意 "I want" 和 "I\'d like to" 的使用场景', '价格提问用 How much 而非 How many'],
       totalWords: 245, uniqueWords: 68, speakingTime: 980,
     },
+    rounds: sampleRounds,
   },
   {
     id: 'r2', date: '2026-06-08 19:00', duration: 2400, roomName: '英语面试-高级', roomId: 'r4',
@@ -121,11 +186,13 @@ const sampleRecordings: PlaybackItem[] = [
     corrections: [
       { timestamp: 240, original: 'I have many experience', corrected: 'I have much experience', note: 'experience 是不可数名词，用 much' },
     ],
+    rounds: [],
   },
   {
     id: 'r3', date: '2026-06-07 21:15', duration: 1500, roomName: '日语入门-日常对话', roomId: 'r3',
     subtitle: 'こんにちは、元気ですか？', subtitles: [],
     corrections: [],
+    rounds: [],
   },
 ]
 
@@ -193,7 +260,9 @@ const defaultState: AppState = {
   participants: sampleParticipants,
   tasks: sampleTasks,
   activeTask: sampleTasks[0],
+  activeAssignedTaskId: null,
   hints: sampleHints,
+  generatedHints: [],
   liveSubtitles: [
     { id: 's1', speaker: '小明', speakerId: 'u3', speakerAvatar: avatars[2], speakerEmoji: '🤔', text: 'Excuse me, how can I get to the nearest subway station?', timestamp: 0, isMe: false },
     { id: 's2', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Go straight for two blocks, then turn left at the traffic lights.', timestamp: 15, isMe: false },
@@ -214,6 +283,9 @@ const defaultState: AppState = {
   customRooms: sampleCustomRooms,
   currentRound: 1,
   namedSpeakerId: null,
+  selectedParticipantId: null,
+  roundArchives: [],
+  currentRoundStartTs: null,
   showAIRecommendation: true,
   hintPreferences: {
     difficulty: 'intermediate',
@@ -293,6 +365,56 @@ function generateFluencyReport(duration: number, subtitles: SubtitleLine[], corr
   }
 }
 
+function generateHints(task: TaskCard, difficulty: Difficulty, focusTypes: string[]): Hint[] {
+  const results: Hint[] = []
+  let idCounter = 0
+
+  const depthMap: Record<Difficulty, { vocabDepth: string; patternDepth: string }> = {
+    beginner: { vocabDepth: '基础含义', patternDepth: '基础用法' },
+    intermediate: { vocabDepth: '详细释义与搭配', patternDepth: '常见场景与变体' },
+    advanced: { vocabDepth: '词源、同义词辨析与高级搭配', patternDepth: '正式/非正式用法与高级变体' },
+  }
+  const depth = depthMap[difficulty]
+
+  if (focusTypes.includes('vocabulary')) {
+    task.keyVocabulary.forEach((word) => {
+      results.push({
+        id: `gh_${Date.now()}_${idCounter++}`,
+        type: 'vocabulary',
+        content: word,
+        translation: `${word}（${depth.vocabDepth}）`,
+        example: `Example: ${task.keyPatterns[0] || "Let's use it in context."}`,
+      })
+    })
+  }
+
+  if (focusTypes.includes('pattern')) {
+    task.keyPatterns.forEach((pattern) => {
+      results.push({
+        id: `gh_${Date.now()}_${idCounter++}`,
+        type: 'pattern',
+        content: pattern,
+        translation: `${pattern}（${depth.patternDepth}）`,
+        example: `场景：${task.description.slice(0, 30)}...`,
+      })
+    })
+  }
+
+  if (focusTypes.includes('pronunciation')) {
+    task.keyVocabulary.slice(0, 3).forEach((word) => {
+      results.push({
+        id: `gh_${Date.now()}_${idCounter++}`,
+        type: 'pronunciation',
+        content: word,
+        translation: `/prəˌnʌnsiˈeɪʃn/ 发音提示`,
+        example: '注意重音位置和元音发音',
+      })
+    })
+  }
+
+  return results
+}
+
 export const useAppStore = create<AppState & {
   updateProfile: (p: Partial<UserProfile>) => void
   startRecording: () => void
@@ -312,7 +434,7 @@ export const useAppStore = create<AppState & {
   enterRoom: (room: Room) => void
   leaveRoom: () => void
   syncToWindows: <K extends keyof AppState>(key: K, value: AppState[K]) => void
-  saveItem: (data: { type: CollectionType; content: string; translation: string; example?: string; source: string }) => void
+  saveItem: (data: { type: CollectionType; content: string; translation: string; example?: string; source: string; roundNumber?: number; taskTitle?: string }) => void
   deleteSavedItem: (id: string) => void
   assignTaskToMember: (taskCardId: string, assigneeId: string, roundNumber: number) => void
   updateAssignedTaskStatus: (id: string, status: TaskStatus) => void
@@ -330,6 +452,10 @@ export const useAppStore = create<AppState & {
   acceptAssignedTask: (assignedTaskId: string) => void
   toggleAIRecommendation: () => void
   updateHintPreferences: (prefs: Partial<HintPreferences>) => void
+  generateHintsForTask: (taskId: string, difficulty: Difficulty, focusTypes: string[]) => void
+  selectParticipant: (participantId: string | null) => void
+  archiveCurrentRound: () => void
+  startNewRound: (taskCardId?: string) => void
 }>((set, get) => {
   const stored = loadFromStorage()
 
@@ -472,6 +598,7 @@ export const useAppStore = create<AppState & {
         subtitles: finalSubtitles,
         corrections: generatedCorrections,
         report,
+        rounds: [],
       }
 
       const newRecordings = [recording, ...state.recordings]
@@ -915,8 +1042,9 @@ export const useAppStore = create<AppState & {
       if (!assigned) return
       state.updateAssignedTaskStatus(assignedTaskId, 'accepted')
       state.setActiveTaskByCard(assigned.taskCardId)
-      set({ currentRound: assigned.roundNumber })
+      set({ currentRound: assigned.roundNumber, activeAssignedTaskId: assignedTaskId })
       get().syncToWindows('currentRound', assigned.roundNumber)
+      get().syncToWindows('activeAssignedTaskId', assignedTaskId)
     },
 
     toggleAIRecommendation: () => {
@@ -933,6 +1061,60 @@ export const useAppStore = create<AppState & {
       set({ hintPreferences: newPrefs })
       saveToStorage(get())
       get().syncToWindows('hintPreferences', newPrefs)
+    },
+
+    generateHintsForTask: (taskId, difficulty, focusTypes) => {
+      const state = get()
+      const task = state.tasks.find((t) => t.id === taskId)
+      if (!task) return
+      const newHints = generateHints(task, difficulty, focusTypes)
+      set({ generatedHints: newHints })
+      get().syncToWindows('generatedHints', newHints)
+    },
+
+    selectParticipant: (participantId) => {
+      set({ selectedParticipantId: participantId })
+      get().syncToWindows('selectedParticipantId', participantId)
+    },
+
+    archiveCurrentRound: () => {
+      const state = get()
+      const roundTasks = state.assignedTasks.filter((t) => t.roundNumber === state.currentRound)
+      const archive: RoundArchive = {
+        roundNumber: state.currentRound,
+        taskCardId: state.activeTask?.id || roundTasks[0]?.taskCardId || '',
+        taskTitle: state.activeTask?.title || '',
+        taskTheme: state.activeTask?.theme || 'daily',
+        startTimestamp: state.currentRoundStartTs || 0,
+        endTimestamp: state.recordingStartTime ? Math.floor((Date.now() - state.recordingStartTime) / 1000) : 0,
+        assigneeIds: roundTasks.map((t) => t.assigneeId),
+        subtitles: state.liveSubtitles.filter((s) => s.roundNumber === state.currentRound),
+        corrections: state.recordings[0]?.corrections.filter((c) => c.roundNumber === state.currentRound) || [],
+      }
+      const archives = [...state.roundArchives, archive]
+      set({ roundArchives: archives })
+      saveToStorage(get())
+    },
+
+    startNewRound: (taskCardId) => {
+      const state = get()
+      state.archiveCurrentRound()
+      const afterArchive = get()
+      const newRound = afterArchive.currentRound + 1
+      let newActiveTask = afterArchive.activeTask
+      if (taskCardId) {
+        const t = afterArchive.tasks.find((task) => task.id === taskCardId)
+        if (t) newActiveTask = t
+      }
+      set({
+        currentRound: newRound,
+        currentRoundStartTs: afterArchive.recordingStartTime
+          ? Math.floor((Date.now() - afterArchive.recordingStartTime) / 1000)
+          : 0,
+        activeTask: newActiveTask,
+      })
+      get().syncToWindows('currentRound', newRound)
+      get().syncToWindows('activeTask', newActiveTask)
     },
   }
 })
