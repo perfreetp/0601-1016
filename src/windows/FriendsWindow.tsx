@@ -1,14 +1,14 @@
-import { useState } from 'react'
-import { useAppStore, languages } from '@/store'
-import type { Friend, Room, Language } from '@/types'
+import { useState, useMemo } from 'react'
+import { useAppStore, languages, avatarsList } from '@/store'
+import type { Friend, Room, Language, Avatar, Appointment } from '@/types'
 
 type TabType = 'friends' | 'invites' | 'favorites' | 'appointments'
 
 const sampleRooms: Room[] = [
-  { id: 'r1', name: '英语角-日常对话', language: 'en', theme: 'daily', difficulty: 'beginner', capacity: 6, current: 4, host: 'Alice' },
-  { id: 'r2', name: '餐厅点餐模拟', language: 'en', theme: 'restaurant', difficulty: 'intermediate', capacity: 4, current: 3, host: 'Mike' },
-  { id: 'r3', name: '日语入门-五十音', language: 'ja', theme: 'daily', difficulty: 'beginner', capacity: 8, current: 5, host: 'Sakura' },
-  { id: 'r4', name: '商务英语-谈判技巧', language: 'en', theme: 'business', difficulty: 'advanced', capacity: 4, current: 2, host: 'David' },
+  { id: 'r1', name: '英语角-日常对话', language: 'en', theme: 'daily', difficulty: 'beginner', capacity: 6, current: 4, host: 'Alice', hostId: 'f1' },
+  { id: 'r2', name: '餐厅点餐模拟', language: 'en', theme: 'restaurant', difficulty: 'intermediate', capacity: 4, current: 3, host: 'Mike', hostId: 'f6' },
+  { id: 'r3', name: '日语入门-五十音', language: 'ja', theme: 'daily', difficulty: 'beginner', capacity: 8, current: 5, host: 'Sakura', hostId: 'f3' },
+  { id: 'r4', name: '商务英语-谈判技巧', language: 'en', theme: 'business', difficulty: 'advanced', capacity: 4, current: 2, host: 'David', hostId: 'f4' },
 ]
 
 function FriendsWindow() {
@@ -26,6 +26,8 @@ function FriendsWindow() {
     confirmAppointment,
     cancelAppointment,
     enterRoom,
+    enterRoomFromAppointment,
+    addFriend,
   } = useAppStore()
 
   const [tab, setTab] = useState<TabType>('friends')
@@ -41,6 +43,15 @@ function FriendsWindow() {
   const [planTitle, setPlanTitle] = useState('')
   const [planTarget, setPlanTarget] = useState('')
   const [planDeadline, setPlanDeadline] = useState('')
+
+  const [showAddFriend, setShowAddFriend] = useState(false)
+  const [newFriendNickname, setNewFriendNickname] = useState('')
+  const [newFriendAvatar, setNewFriendAvatar] = useState<Avatar | null>(null)
+
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -104,7 +115,95 @@ function FriendsWindow() {
     showToast('已取消预约')
   }
 
+  const handleEnterFromAppointment = (appointmentId: string) => {
+    const room = enterRoomFromAppointment(appointmentId)
+    if (room) {
+      showToast('✅ 正在进入预约房间...')
+      setTimeout(() => window.electronAPI.openWindow('room'), 500)
+    }
+  }
+
+  const handleAddFriend = () => {
+    if (!newFriendNickname.trim() || !newFriendAvatar) {
+      showToast('⚠️ 请填写昵称并选择头像')
+      return
+    }
+    addFriend({ nickname: newFriendNickname.trim(), avatar: newFriendAvatar })
+    showToast(`✅ 已添加好友：${newFriendNickname}`)
+    setShowAddFriend(false)
+    setNewFriendNickname('')
+    setNewFriendAvatar(null)
+  }
+
   const favoriteRoomList = sampleRooms.filter((r) => favoriteRooms.includes(r.id))
+
+  const isWithin24Hours = (timeStr: string): boolean => {
+    const apptTime = new Date(timeStr.replace(' ', 'T')).getTime()
+    const now = Date.now()
+    const diff = apptTime - now
+    return diff >= 0 && diff <= 24 * 60 * 60 * 1000
+  }
+
+  const upcomingAppointments = useMemo(
+    () => appointments.filter((a) => a.status !== 'cancelled' && isWithin24Hours(a.time)),
+    [appointments]
+  )
+
+  const appointmentDates = useMemo(() => {
+    const dates = new Set<string>()
+    appointments
+      .filter((a) => a.status !== 'cancelled')
+      .forEach((a) => {
+        const d = a.time.split(' ')[0]
+        if (d) dates.add(d)
+      })
+    return dates
+  }, [appointments])
+
+  const calendarDays = useMemo(() => {
+    const { year, month } = calendarMonth
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const startWeekday = firstDay.getDay()
+    const daysInMonth = lastDay.getDate()
+
+    const days: (number | null)[] = []
+    for (let i = 0; i < startWeekday; i++) days.push(null)
+    for (let d = 1; d <= daysInMonth; d++) days.push(d)
+
+    return days
+  }, [calendarMonth])
+
+  const formatCalendarDate = (day: number): string => {
+    const { year, month } = calendarMonth
+    const mm = String(month + 1).padStart(2, '0')
+    const dd = String(day).padStart(2, '0')
+    return `${year}-${mm}-${dd}`
+  }
+
+  const prevMonth = () => {
+    setCalendarMonth((prev) => {
+      let { year, month } = prev
+      month -= 1
+      if (month < 0) {
+        month = 11
+        year -= 1
+      }
+      return { year, month }
+    })
+  }
+
+  const nextMonth = () => {
+    setCalendarMonth((prev) => {
+      let { year, month } = prev
+      month += 1
+      if (month > 11) {
+        month = 0
+        year += 1
+      }
+      return { year, month }
+    })
+  }
 
   const renderFriendCard = (friend: Friend) => (
     <div key={friend.id} className="list-item">
@@ -147,6 +246,60 @@ function FriendsWindow() {
     </div>
   )
 
+  const renderAppointmentCard = (ap: Appointment) => (
+    <div key={ap.id} className="list-item">
+      <div className="flex gap-12">
+        <div
+          className="avatar avatar-small"
+          style={{ background: ap.partnerAvatar.color, width: 48, height: 48, fontSize: 24 }}
+        >
+          {ap.partnerAvatar.emoji}
+        </div>
+        <div>
+          <div className="flex gap-8 mb-4">
+            <span className="font-bold">{ap.partnerName}</span>
+            <span
+              className={`badge ${
+                ap.status === 'confirmed' ? 'badge-green' : 'badge-yellow'
+              }`}
+            >
+              {ap.status === 'confirmed' ? '✅ 已确认' : '⏳ 待确认'}
+            </span>
+            <span className="badge badge-blue">
+              {languages.find((l) => l.value === ap.language)?.flag}
+            </span>
+          </div>
+          <div className="text-sm text-secondary">🎯 {ap.topic}</div>
+          <div className="text-sm text-muted mt-4">🕐 {ap.time}</div>
+        </div>
+      </div>
+      <div className="flex gap-8">
+        {isWithin24Hours(ap.time) && ap.status === 'confirmed' && (
+          <button
+            className="btn btn-small btn-success"
+            onClick={() => handleEnterFromAppointment(ap.id)}
+          >
+            立即进入
+          </button>
+        )}
+        {ap.status === 'pending' && (
+          <button
+            className="btn btn-small btn-success"
+            onClick={() => handleConfirm(ap.id)}
+          >
+            确认
+          </button>
+        )}
+        <button
+          className="btn btn-small btn-danger"
+          onClick={() => handleCancel(ap.id)}
+        >
+          取消
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div>
       {toast && (
@@ -169,6 +322,80 @@ function FriendsWindow() {
         </div>
       )}
 
+      {showAddFriend && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9000,
+          }}
+          onClick={() => setShowAddFriend(false)}
+        >
+          <div
+            className="card"
+            style={{ width: 380, padding: 24 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-16">➕ 添加好友</h3>
+            <div className="mb-12">
+              <label className="text-sm text-muted mb-8 block">昵称</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="请输入好友昵称"
+                value={newFriendNickname}
+                onChange={(e) => setNewFriendNickname(e.target.value)}
+              />
+            </div>
+            <div className="mb-16">
+              <label className="text-sm text-muted mb-8 block">选择头像</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                {avatarsList.map((av) => (
+                  <button
+                    key={av.id}
+                    onClick={() => setNewFriendAvatar(av)}
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: '50%',
+                      border: newFriendAvatar?.id === av.id ? '3px solid var(--primary)' : '2px solid var(--border)',
+                      background: av.color,
+                      fontSize: 28,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: newFriendAvatar?.id === av.id ? '0 0 12px var(--glow)' : 'none',
+                    }}
+                    title={av.name}
+                  >
+                    {av.emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-12">
+              <button
+                className="btn btn-secondary flex-1"
+                onClick={() => setShowAddFriend(false)}
+              >
+                取消
+              </button>
+              <button className="btn flex-1" onClick={handleAddFriend}>
+                添加
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="window-header">
         <div className="flex gap-12 items-center">
           <h1 className="window-title">👥 好友搭子</h1>
@@ -185,6 +412,40 @@ function FriendsWindow() {
           </button>
         </div>
       </div>
+
+      {upcomingAppointments.length > 0 && (
+        <div
+          className="card mb-16"
+          style={{
+            borderColor: 'var(--warning)',
+            background: 'linear-gradient(135deg, rgba(255,193,7,0.1), rgba(255,87,34,0.08))',
+          }}
+        >
+          <div className="flex flex-between items-center">
+            <div>
+              <div className="text-sm" style={{ color: 'var(--warning)' }}>⏰ 临近预约提醒</div>
+              <div className="font-bold mt-4">
+                {upcomingAppointments.length === 1
+                  ? `你有 1 个 24 小时内的预约：${upcomingAppointments[0].partnerName} - ${upcomingAppointments[0].topic}`
+                  : `你有 ${upcomingAppointments.length} 个 24 小时内的预约`}
+              </div>
+            </div>
+            <div className="flex gap-8">
+              {upcomingAppointments.slice(0, 2).map((ap) => (
+                <button
+                  key={ap.id}
+                  className="btn btn-small"
+                  onClick={() => handleEnterFromAppointment(ap.id)}
+                  disabled={ap.status !== 'confirmed'}
+                  style={{ opacity: ap.status !== 'confirmed' ? 0.5 : 1 }}
+                >
+                  {ap.status === 'confirmed' ? '🚀 立即进入' : '⏳ 待确认'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="tab-group">
         <button className={`tab-item ${tab === 'friends' ? 'active' : ''}`} onClick={() => setTab('friends')}>
@@ -242,7 +503,11 @@ function FriendsWindow() {
               {searchFilter(offlineFriends).map(renderFriendCard)}
             </div>
           )}
-          <button className="card w-full text-center mt-16" style={{ borderStyle: 'dashed' }}>
+          <button
+            className="card w-full text-center mt-16"
+            style={{ borderStyle: 'dashed', cursor: 'pointer' }}
+            onClick={() => setShowAddFriend(true)}
+          >
             <span style={{ fontSize: 24 }}>➕</span>
             <span className="ml-8">添加好友</span>
           </button>
@@ -324,6 +589,104 @@ function FriendsWindow() {
       {tab === 'appointments' && (
         <div>
           <div className="card mb-16" style={{ borderColor: 'var(--accent)' }}>
+            <div className="flex flex-between items-center mb-12">
+              <h3 className="font-bold">📆 日历视图</h3>
+              <div className="flex gap-8 items-center">
+                <button className="btn btn-small btn-secondary" onClick={prevMonth}>◀</button>
+                <span className="font-bold" style={{ minWidth: 120, textAlign: 'center' }}>
+                  {calendarMonth.year} 年 {calendarMonth.month + 1} 月
+                </span>
+                <button className="btn btn-small btn-secondary" onClick={nextMonth}>▶</button>
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 1fr)',
+                gap: 6,
+                marginBottom: 8,
+              }}
+            >
+              {['日', '一', '二', '三', '四', '五', '六'].map((w) => (
+                <div
+                  key={w}
+                  className="text-center text-sm text-muted"
+                  style={{ padding: '8px 0', fontWeight: 'bold' }}
+                >
+                  {w}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+              {calendarDays.map((day, idx) => {
+                if (day === null) {
+                  return <div key={idx} />
+                }
+                const dateStr = formatCalendarDate(day)
+                const hasAppointment = appointmentDates.has(dateStr)
+                const isToday =
+                  dateStr ===
+                  `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      aspectRatio: '1 / 1',
+                      borderRadius: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: hasAppointment
+                        ? 'var(--primary)'
+                        : isToday
+                        ? 'rgba(0,206,201,0.15)'
+                        : 'transparent',
+                      color: hasAppointment ? 'white' : isToday ? 'var(--secondary)' : 'var(--text)',
+                      fontWeight: hasAppointment || isToday ? 'bold' : 'normal',
+                      cursor: hasAppointment ? 'pointer' : 'default',
+                      fontSize: 14,
+                      border: isToday ? '1px solid var(--secondary)' : 'none',
+                    }}
+                    title={hasAppointment ? '有预约' : ''}
+                  >
+                    {day}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-16 mt-12 text-sm text-muted">
+              <span>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 14,
+                    height: 14,
+                    borderRadius: 3,
+                    background: 'var(--primary)',
+                    marginRight: 6,
+                    verticalAlign: 'middle',
+                  }}
+                />
+                有预约
+              </span>
+              <span>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 14,
+                    height: 14,
+                    borderRadius: 3,
+                    border: '1px solid var(--secondary)',
+                    marginRight: 6,
+                    verticalAlign: 'middle',
+                  }}
+                />
+                今天
+              </span>
+            </div>
+          </div>
+
+          <div className="card mb-16" style={{ borderColor: 'var(--accent)' }}>
             <h3 className="font-bold mb-12">🎯 预约新搭子</h3>
             <div className="grid grid-2 gap-12 mb-12">
               <select
@@ -382,51 +745,7 @@ function FriendsWindow() {
           ) : (
             appointments
               .filter((a) => a.status !== 'cancelled')
-              .map((ap) => (
-                <div key={ap.id} className="list-item">
-                  <div className="flex gap-12">
-                    <div
-                      className="avatar avatar-small"
-                      style={{ background: ap.partnerAvatar.color, width: 48, height: 48, fontSize: 24 }}
-                    >
-                      {ap.partnerAvatar.emoji}
-                    </div>
-                    <div>
-                      <div className="flex gap-8 mb-4">
-                        <span className="font-bold">{ap.partnerName}</span>
-                        <span
-                          className={`badge ${
-                            ap.status === 'confirmed' ? 'badge-green' : 'badge-yellow'
-                          }`}
-                        >
-                          {ap.status === 'confirmed' ? '✅ 已确认' : '⏳ 待确认'}
-                        </span>
-                        <span className="badge badge-blue">
-                          {languages.find((l) => l.value === ap.language)?.flag}
-                        </span>
-                      </div>
-                      <div className="text-sm text-secondary">🎯 {ap.topic}</div>
-                      <div className="text-sm text-muted mt-4">🕐 {ap.time}</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-8">
-                    {ap.status === 'pending' && (
-                      <button
-                        className="btn btn-small btn-success"
-                        onClick={() => handleConfirm(ap.id)}
-                      >
-                        确认
-                      </button>
-                    )}
-                    <button
-                      className="btn btn-small btn-danger"
-                      onClick={() => handleCancel(ap.id)}
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ))
+              .map(renderAppointmentCard)
           )}
         </div>
       )}

@@ -32,16 +32,73 @@ export interface Room {
   capacity: number
   current: number
   host: string
+  hostId: string
+  isCustom?: boolean
 }
 
 export interface Participant {
   id: string
   nickname: string
   avatar: Avatar
+  nameplate?: string
+  defaultEmoji?: string
   seat: number
   muted: boolean
   handRaised: boolean
   group: number
+  isHost: boolean
+  isSpeaking: boolean
+}
+
+export type TaskStatus = 'pending' | 'accepted' | 'in-progress' | 'completed'
+
+export interface AssignedTask {
+  id: string
+  taskCardId: string
+  assigneeId: string
+  assigneeName: string
+  assignedAt: string
+  status: TaskStatus
+  roundNumber: number
+}
+
+export interface GroupTimer {
+  groupId: number
+  startTime: number | null
+  duration: number
+  running: boolean
+}
+
+export interface TurnOrder {
+  id: string
+  participantIds: string[]
+  currentIndex: number
+  roundNumber: number
+}
+
+export type CollectionType = 'vocabulary' | 'pattern'
+
+export interface SavedItem {
+  id: string
+  type: CollectionType
+  content: string
+  translation: string
+  example?: string
+  source: string
+  createdAt: string
+}
+
+export interface FluencyReport {
+  overallScore: number
+  pronunciationScore: number
+  grammarScore: number
+  fluencyScore: number
+  vocabularyScore: number
+  highlights: string[]
+  suggestions: string[]
+  totalWords: number
+  uniqueWords: number
+  speakingTime: number
 }
 
 export interface TaskCard {
@@ -74,6 +131,8 @@ export interface SubtitleLine {
   id: string
   speaker: string
   speakerId: string
+  speakerAvatar?: Avatar
+  speakerEmoji?: string
   text: string
   timestamp: number
   isMe: boolean
@@ -88,6 +147,7 @@ export interface PlaybackItem {
   subtitle: string
   subtitles: SubtitleLine[]
   corrections: Correction[]
+  report?: FluencyReport
 }
 
 export interface Friend {
@@ -166,4 +226,11 @@ export interface AppState {
   favoriteRooms: string[]
   badges: Badge[]
   studyPlans: StudyPlan[]
+  savedItems: SavedItem[]
+  assignedTasks: AssignedTask[]
+  groupTimers: GroupTimer[]
+  turnOrder: TurnOrder | null
+  customRooms: Room[]
+  currentRound: number
+  namedSpeakerId: string | null
 }

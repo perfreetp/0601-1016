@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore, languages, themes, difficulties } from '@/store'
-import type { Participant } from '@/types'
+import type { Participant, TaskStatus } from '@/types'
 
 function formatTime(sec: number) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0')
@@ -27,16 +27,34 @@ function RoomWindow() {
     isRecording,
     recordingStartTime,
     liveSubtitles,
+    tasks,
+    assignedTasks,
+    groupTimers,
+    currentRound,
+    namedSpeakerId,
     startRecording,
     stopRecording,
     addSubtitle,
+    assignTaskToMember,
+    updateAssignedTaskStatus,
+    startGroupTimer,
+    stopGroupTimer,
+    nameSpeaker,
+    clearNamedSpeaker,
+    nextTurn,
   } = useAppStore()
   const [muted, setMuted] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'group'>('grid')
   const [elapsed, setElapsed] = useState(0)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null)
+  const [selectedTaskCardId, setSelectedTaskCardId] = useState<string>(tasks[0]?.id || '')
+  const [taskRoundNumber, setTaskRoundNumber] = useState<number>(1)
+  const [groupTimerDurations, setGroupTimerDurations] = useState<{ [key: number]: number }>({ 1: 300, 2: 300 })
+  const [groupRemainingTimes, setGroupRemainingTimes] = useState<{ [key: number]: number }>({ 1: 300, 2: 300 })
   const timerRef = useRef<number | null>(null)
   const subtitleIdxRef = useRef(0)
+  const groupTimerIntervalRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (isRecording && recordingStartTime) {
@@ -72,11 +90,42 @@ function RoomWindow() {
     }
   }, [isRecording, recordingStartTime, profile.nickname, addSubtitle])
 
+  useEffect(() => {
+    groupTimerIntervalRef.current = window.setInterval(() => {
+      setGroupRemainingTimes((prev) => {
+        const next = { ...prev }
+        groupTimers.forEach((t) => {
+          if (t.running && t.startTime) {
+            const remaining = Math.max(0, t.duration - Math.floor((Date.now() - t.startTime) / 1000))
+            next[t.groupId] = remaining
+          }
+        })
+        return next
+      })
+    }, 500)
+    return () => {
+      if (groupTimerIntervalRef.current) window.clearInterval(groupTimerIntervalRef.current)
+    }
+  }, [groupTimers])
+
+  useEffect(() => {
+    setTaskRoundNumber(currentRound)
+  }, [currentRound])
+
   const getLangLabel = (l: string) => languages.find((x) => x.value === l)?.label || l
   const getLangFlag = (l: string) => languages.find((x) => x.value === l)?.flag || '🌍'
   const getThemeLabel = (t: string) => themes.find((x) => x.value === t)?.label || t
   const getThemeIcon = (t: string) => themes.find((x) => x.value === t)?.icon || '📌'
   const getDiffLabel = (d: string) => difficulties.find((x) => x.value === d)?.label || d
+
+  const getStatusLabel = (s: TaskStatus) => {
+    switch (s) {
+      case 'pending': return { label: '待处理', color: '#FF9800' }
+      case 'accepted': return { label: '已接受', color: '#2196F3' }
+      case 'in-progress': return { label: '进行中', color: '#9C27B0' }
+      case 'completed': return { label: '已完成', color: '#4CAF50' }
+    }
+  }
 
   const toggleMute = (userId: string) => {
     const updated = participants.map((p) =>
@@ -123,29 +172,95 @@ function RoomWindow() {
     }
   }
 
+  const handleNameSpeaker = () => {
+    if (selectedParticipantId) {
+      nameSpeaker(selectedParticipantId)
+    }
+  }
+
+  const handleAssignTask = () => {
+    if (selectedTaskCardId && selectedParticipantId) {
+      assignTaskToMember(selectedTaskCardId, selectedParticipantId, taskRoundNumber)
+    }
+  }
+
+  const handleStartGroupTimer = (groupId: number) => {
+    startGroupTimer(groupId, groupTimerDurations[groupId] || 300)
+  }
+
+  const handleStopGroupTimer = (groupId: number) => {
+    stopGroupTimer(groupId)
+  }
+
   const emptySeats = Array.from({ length: 8 }, (_, i) => i + 1).filter(
     (n) => !participants.some((p) => p.seat === n)
   )
 
   const me = participants.find((p) => p.id === 'u1')
+  const isHost = me?.isHost
 
   const renderParticipant = (p: Participant) => (
     <div
       key={p.id}
-      className={`seat ${me?.id === p.id ? 'current' : ''} ${p.id === 'u3' && isRecording ? 'speaking' : ''}`}
+      className={`seat ${me?.id === p.id ? 'current' : ''} ${p.id === namedSpeakerId ? 'speaking named' : ''} ${p.id === 'u3' && isRecording && p.id !== namedSpeakerId ? 'speaking' : ''}`}
+      onClick={() => setSelectedParticipantId(p.id)}
+      style={selectedParticipantId === p.id ? { outline: '3px solid var(--primary)', outlineOffset: '2px' } : undefined}
     >
       {p.handRaised && <span className="raised-hand">✋</span>}
+      {p.isHost && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            fontSize: 14,
+            background: 'var(--warning)',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: 999,
+            fontWeight: 600,
+          }}
+        >
+          👑 主持
+        </span>
+      )}
       <div className="avatar avatar-small" style={{ background: p.avatar.color }}>
         {p.avatar.emoji}
+        {p.defaultEmoji && (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: -4,
+              right: -4,
+              fontSize: 16,
+              background: 'var(--bg-card)',
+              borderRadius: '50%',
+              padding: 2,
+              border: '2px solid var(--border)',
+            }}
+          >
+            {p.defaultEmoji}
+          </span>
+        )}
       </div>
       <div className="text-sm font-medium mt-8">{p.nickname}</div>
+      {p.nameplate && (
+        <div
+          className="text-xs text-muted mt-4"
+          style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 8px' }}
+          title={p.nameplate}
+        >
+          {p.nameplate}
+        </div>
+      )}
       <div className="flex gap-4 mt-8">
         <span className="badge badge-blue">G{p.group}</span>
-        {p.id === 'u3' && isRecording && <span className="badge badge-purple">🎤 说话中</span>}
+        {p.id === namedSpeakerId && <span className="badge badge-red">🎤 点名发言</span>}
+        {p.id === 'u3' && isRecording && p.id !== namedSpeakerId && <span className="badge badge-purple">🎤 说话中</span>}
       </div>
       <div
         className={`mic-icon ${p.muted ? 'mic-off' : 'mic-on'}`}
-        onClick={() => toggleMute(p.id)}
+        onClick={(e) => { e.stopPropagation(); toggleMute(p.id) }}
         title={p.muted ? '点击解除静音' : '点击静音'}
       >
         {p.muted ? '🔇' : '🎙️'}
@@ -155,6 +270,83 @@ function RoomWindow() {
 
   const group1 = participants.filter((p) => p.group === 1)
   const group2 = participants.filter((p) => p.group === 2)
+
+  const renderGroupTimer = (groupId: number) => {
+    const timer = groupTimers.find((t) => t.groupId === groupId)
+    const remaining = groupRemainingTimes[groupId] || 0
+    const duration = groupTimerDurations[groupId] || 300
+    const isRunning = timer?.running
+
+    return (
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          background: isRunning ? 'rgba(156, 39, 176, 0.08)' : 'var(--bg-card)',
+          border: isRunning ? '1px solid var(--purple)' : '1px solid var(--border)',
+        }}
+      >
+        <div className="flex flex-between items-center mb-8">
+          <h4 className="font-bold text-sm">⏱️ 第{groupId}组计时</h4>
+          <span
+            className="badge"
+            style={{
+              background: isRunning ? 'var(--purple)' : 'var(--bg-input)',
+              color: isRunning ? 'white' : 'var(--text-secondary)',
+            }}
+          >
+            {isRunning ? '运行中' : '已停止'}
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: 32,
+            fontWeight: 700,
+            textAlign: 'center',
+            fontFamily: 'monospace',
+            color: isRunning ? (remaining <= 10 ? 'var(--danger)' : 'var(--primary)') : 'var(--text-muted)',
+            margin: '8px 0',
+          }}
+        >
+          {formatTime(remaining)}
+        </div>
+        <div className="flex gap-4 items-center mb-8">
+          <span className="text-sm text-muted">时长:</span>
+          <select
+            className="input input-small"
+            value={duration}
+            onChange={(e) => setGroupTimerDurations({ ...groupTimerDurations, [groupId]: Number(e.target.value) })}
+            disabled={isRunning}
+          >
+            <option value={60}>1分钟</option>
+            <option value={180}>3分钟</option>
+            <option value={300}>5分钟</option>
+            <option value={600}>10分钟</option>
+            <option value={900}>15分钟</option>
+          </select>
+        </div>
+        <div className="flex gap-4">
+          {!isRunning ? (
+            <button
+              className="btn btn-small btn-primary"
+              onClick={() => handleStartGroupTimer(groupId)}
+              style={{ flex: 1 }}
+            >
+              ▶️ 开始
+            </button>
+          ) : (
+            <button
+              className="btn btn-small btn-danger"
+              onClick={() => handleStopGroupTimer(groupId)}
+              style={{ flex: 1 }}
+            >
+              ⏹️ 停止
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -183,6 +375,17 @@ function RoomWindow() {
             <h1 className="window-title">
               {currentRoom ? currentRoom.name : '会话房间'}
             </h1>
+            <span
+              className="badge"
+              style={{
+                background: 'linear-gradient(135deg, var(--primary), var(--purple))',
+                color: 'white',
+                fontSize: 13,
+                padding: '6px 14px',
+              }}
+            >
+              🔄 第 {currentRound} 轮
+            </span>
             {isRecording && (
               <div
                 style={{
@@ -231,6 +434,60 @@ function RoomWindow() {
         </div>
       </div>
 
+      {isHost && (
+        <div className="card mb-16">
+          <h3 className="font-bold mb-12">🎙️ 主持人工具栏</h3>
+          <div className="grid grid-4 gap-12">
+            <div>
+              <label className="text-sm text-muted mb-4 block">选择成员</label>
+              <select
+                className="input"
+                value={selectedParticipantId || ''}
+                onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+              >
+                <option value="">-- 点击座位或选择成员 --</option>
+                {participants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.avatar.emoji} {p.nickname} {p.isHost ? '(主持)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-muted mb-4 block">点名发言</label>
+              <button
+                className="btn btn-primary"
+                onClick={handleNameSpeaker}
+                disabled={!selectedParticipantId}
+                style={{ width: '100%' }}
+              >
+                📢 点名发言
+              </button>
+            </div>
+            <div>
+              <label className="text-sm text-muted mb-4 block">轮次控制</label>
+              <button
+                className="btn btn-warning"
+                onClick={nextTurn}
+                style={{ width: '100%' }}
+              >
+                ⏭️ 下一位
+              </button>
+            </div>
+            <div>
+              <label className="text-sm text-muted mb-4 block">清除点名</label>
+              <button
+                className="btn btn-secondary"
+                onClick={clearNamedSpeaker}
+                style={{ width: '100%' }}
+              >
+                ✖️ 清除点名
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-between mb-16">
         <div className="flex gap-8">
           <button
@@ -265,51 +522,176 @@ function RoomWindow() {
         </div>
       </div>
 
-      {viewMode === 'grid' ? (
-        <div className="grid grid-4 gap-16 mb-24">
-          {participants.map(renderParticipant)}
-          {emptySeats.map((seat) => (
-            <div
-              key={`empty-${seat}`}
-              className="seat empty"
-              onClick={() => me && changeSeat(me.id, seat)}
-            >
-              <div style={{ fontSize: 36, opacity: 0.3 }}>➕</div>
-              <div className="text-sm text-muted mt-8">空位 #{seat}</div>
-              <div className="text-xs text-muted mt-4">点击入座</div>
+      <div className="grid grid-3 gap-16 mb-24">
+        <div style={{ gridColumn: 'span 2' }}>
+          {viewMode === 'grid' ? (
+            <div className="grid grid-4 gap-16">
+              {participants.map(renderParticipant)}
+              {emptySeats.map((seat) => (
+                <div
+                  key={`empty-${seat}`}
+                  className="seat empty"
+                  onClick={() => me && changeSeat(me.id, seat)}
+                >
+                  <div style={{ fontSize: 36, opacity: 0.3 }}>➕</div>
+                  <div className="text-sm text-muted mt-8">空位 #{seat}</div>
+                  <div className="text-xs text-muted mt-4">点击入座</div>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            <div className="grid grid-2 gap-24">
+              <div className="card">
+                <div className="flex flex-between mb-16">
+                  <h3 className="font-bold">🎯 第一组 ({group1.length}人)</h3>
+                  {me?.group !== 1 && (
+                    <button className="btn btn-small" onClick={() => me && changeGroup(me.id, 1)}>
+                      加入此组
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-2 gap-12">
+                  {group1.map(renderParticipant)}
+                </div>
+              </div>
+              <div className="card">
+                <div className="flex flex-between mb-16">
+                  <h3 className="font-bold">🎯 第二组 ({group2.length}人)</h3>
+                  {me?.group !== 2 && (
+                    <button className="btn btn-small" onClick={() => me && changeGroup(me.id, 2)}>
+                      加入此组
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-2 gap-12">
+                  {group2.map(renderParticipant)}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-2 gap-24 mb-24">
-          <div className="card">
-            <div className="flex flex-between mb-16">
-              <h3 className="font-bold">🎯 第一组 ({group1.length}人)</h3>
-              {me?.group !== 1 && (
-                <button className="btn btn-small" onClick={() => me && changeGroup(me.id, 1)}>
-                  加入此组
+
+        <div className="flex flex-col gap-12">
+          {isHost && (
+            <div className="card">
+              <h3 className="font-bold mb-12">📝 派发任务</h3>
+              <div className="flex flex-col gap-8">
+                <div>
+                  <label className="text-sm text-muted mb-4 block">选择任务卡</label>
+                  <select
+                    className="input"
+                    value={selectedTaskCardId}
+                    onChange={(e) => setSelectedTaskCardId(e.target.value)}
+                  >
+                    {tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {getThemeIcon(t.theme)} {t.title} ({getDiffLabel(t.difficulty)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted mb-4 block">派发给成员</label>
+                  <select
+                    className="input"
+                    value={selectedParticipantId || ''}
+                    onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                  >
+                    <option value="">-- 选择成员 --</option>
+                    {participants.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.avatar.emoji} {p.nickname}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted mb-4 block">轮次号</label>
+                  <input
+                    type="number"
+                    className="input"
+                    min={1}
+                    value={taskRoundNumber}
+                    onChange={(e) => setTaskRoundNumber(Math.max(1, Number(e.target.value)))}
+                  />
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAssignTask}
+                  disabled={!selectedTaskCardId || !selectedParticipantId}
+                >
+                  📤 派发任务
                 </button>
-              )}
+              </div>
             </div>
-            <div className="grid grid-2 gap-12">
-              {group1.map(renderParticipant)}
+          )}
+
+          <div className="card">
+            <h3 className="font-bold mb-12">⏱️ 分组计时</h3>
+            <div className="flex flex-col gap-8">
+              {renderGroupTimer(1)}
+              {renderGroupTimer(2)}
             </div>
           </div>
-          <div className="card">
-            <div className="flex flex-between mb-16">
-              <h3 className="font-bold">🎯 第二组 ({group2.length}人)</h3>
-              {me?.group !== 2 && (
-                <button className="btn btn-small" onClick={() => me && changeGroup(me.id, 2)}>
-                  加入此组
-                </button>
-              )}
-            </div>
-            <div className="grid grid-2 gap-12">
-              {group2.map(renderParticipant)}
-            </div>
-          </div>
         </div>
-      )}
+      </div>
+
+      <div className="card mb-16">
+        <div className="flex flex-between mb-12">
+          <h3 className="font-bold">📋 已派发任务 ({assignedTasks.length})</h3>
+        </div>
+        {assignedTasks.length === 0 ? (
+          <div className="text-center text-muted py-12">
+            暂无派发的任务
+          </div>
+        ) : (
+          <div className="grid grid-2 gap-12">
+            {assignedTasks.map((at) => {
+              const task = tasks.find((t) => t.id === at.taskCardId)
+              const statusInfo = getStatusLabel(at.status)
+              return (
+                <div
+                  key={at.id}
+                  className="card"
+                  style={{ background: 'var(--bg-input)', margin: 0 }}
+                >
+                  <div className="flex flex-between items-start mb-8">
+                    <div>
+                      <div className="font-bold">
+                        {task ? `${getThemeIcon(task.theme)} ${task.title}` : at.taskCardId}
+                      </div>
+                      <div className="text-sm text-muted mt-4">
+                        👤 {at.assigneeName} · 轮次 {at.roundNumber}
+                      </div>
+                    </div>
+                    <span
+                      className="badge"
+                      style={{ background: statusInfo.color, color: 'white' }}
+                    >
+                      {statusInfo.label}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted mb-8">
+                    派发时间: {at.assignedAt}
+                  </div>
+                  <div className="flex gap-4 flex-wrap">
+                    <select
+                      className="input input-small"
+                      value={at.status}
+                      onChange={(e) => updateAssignedTaskStatus(at.id, e.target.value as TaskStatus)}
+                    >
+                      <option value="pending">待处理</option>
+                      <option value="accepted">已接受</option>
+                      <option value="in-progress">进行中</option>
+                      <option value="completed">已完成</option>
+                    </select>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <div className="flex flex-between mb-12">
@@ -334,34 +716,111 @@ function RoomWindow() {
             </div>
           )}
           {liveSubtitles.map((sub) => (
-            <div className="flex gap-8 mb-8" key={sub.id}>
-              <span className="badge badge-purple">
-                {formatTime(sub.timestamp)}
-              </span>
-              <span className="font-medium" style={{ color: sub.isMe ? 'var(--secondary)' : undefined }}>
-                {sub.speaker}:
-              </span>
-              <span className="text-secondary">{sub.text}</span>
+            <div className="flex gap-8 mb-8" key={sub.id} style={{ alignItems: 'flex-start' }}>
+              {sub.speakerAvatar && (
+                <div
+                  className="avatar"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    minWidth: 36,
+                    background: sub.speakerAvatar.color,
+                    fontSize: 18,
+                    position: 'relative',
+                  }}
+                >
+                  {sub.speakerAvatar.emoji}
+                  {sub.speakerEmoji && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: -4,
+                        right: -4,
+                        fontSize: 12,
+                        background: 'var(--bg-card)',
+                        borderRadius: '50%',
+                        padding: 1,
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {sub.speakerEmoji}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div style={{ flex: 1 }}>
+                <div className="flex gap-8 items-center mb-4">
+                  <span className="badge badge-purple">
+                    {formatTime(sub.timestamp)}
+                  </span>
+                  <span
+                    className="font-medium"
+                    style={{ color: sub.isMe ? 'var(--secondary)' : undefined }}
+                  >
+                    {sub.speaker}
+                    {sub.speakerEmoji && <span className="ml-4">{sub.speakerEmoji}</span>}
+                    :
+                  </span>
+                </div>
+                <div className="text-secondary" style={{ paddingLeft: 4 }}>
+                  {sub.text}
+                </div>
+              </div>
             </div>
           ))}
           {isRecording && (
-            <div className="flex gap-8">
-              <span className="badge badge-purple">{formatTime(elapsed)}</span>
-              <span className="font-medium" style={{ color: 'var(--secondary)' }}>
-                {profile.nickname}:
-              </span>
-              <span>
-                <span className="waveform" style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <span
-                      key={i}
-                      className="wave-bar"
-                      style={{ animationDelay: `${i * 0.08}s` }}
-                    />
-                  ))}
-                </span>
-                正在识别...
-              </span>
+            <div className="flex gap-8" style={{ alignItems: 'flex-start' }}>
+              <div
+                className="avatar"
+                style={{
+                  width: 36,
+                  height: 36,
+                  minWidth: 36,
+                  background: profile.avatar.color,
+                  fontSize: 18,
+                  position: 'relative',
+                }}
+              >
+                {profile.avatar.emoji}
+                {profile.defaultEmoji && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: -4,
+                      right: -4,
+                      fontSize: 12,
+                      background: 'var(--bg-card)',
+                      borderRadius: '50%',
+                      padding: 1,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    {profile.defaultEmoji}
+                  </span>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="flex gap-8 items-center mb-4">
+                  <span className="badge badge-purple">{formatTime(elapsed)}</span>
+                  <span className="font-medium" style={{ color: 'var(--secondary)' }}>
+                    {profile.nickname}
+                    {profile.defaultEmoji && <span className="ml-4">{profile.defaultEmoji}</span>}
+                    :
+                  </span>
+                </div>
+                <div style={{ paddingLeft: 4 }}>
+                  <span className="waveform" style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <span
+                        key={i}
+                        className="wave-bar"
+                        style={{ animationDelay: `${i * 0.08}s` }}
+                      />
+                    ))}
+                  </span>
+                  正在识别...
+                </div>
+              </div>
             </div>
           )}
         </div>

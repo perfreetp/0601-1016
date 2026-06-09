@@ -18,6 +18,12 @@ import type {
   Appointment,
   Room,
   UserProfile,
+  SavedItem,
+  CollectionType,
+  AssignedTask,
+  TaskStatus,
+  GroupTimer,
+  FluencyReport,
 } from '@/types'
 
 const STORAGE_KEY = 'metaverse-language-state'
@@ -34,12 +40,12 @@ const avatars: Avatar[] = [
 ]
 
 const sampleParticipants: Participant[] = [
-  { id: 'u1', nickname: '我', avatar: avatars[0], seat: 1, muted: false, handRaised: false, group: 1 },
-  { id: 'u2', nickname: 'Alice', avatar: avatars[1], seat: 2, muted: true, handRaised: false, group: 1 },
-  { id: 'u3', nickname: '小明', avatar: avatars[2], seat: 3, muted: false, handRaised: true, group: 2 },
-  { id: 'u4', nickname: 'Sakura', avatar: avatars[3], seat: 4, muted: false, handRaised: false, group: 2 },
-  { id: 'u5', nickname: 'David', avatar: avatars[4], seat: 5, muted: true, handRaised: false, group: 1 },
-  { id: 'u6', nickname: '小红', avatar: avatars[5], seat: 6, muted: false, handRaised: false, group: 2 },
+  { id: 'u1', nickname: '我', avatar: avatars[0], nameplate: '努力学习英语 ✨', defaultEmoji: '😊', seat: 1, muted: false, handRaised: false, group: 1, isHost: true, isSpeaking: false },
+  { id: 'u2', nickname: 'Alice', avatar: avatars[1], nameplate: '英语爱好者', defaultEmoji: '😄', seat: 2, muted: true, handRaised: false, group: 1, isHost: false, isSpeaking: false },
+  { id: 'u3', nickname: '小明', avatar: avatars[2], nameplate: '日语入门中', defaultEmoji: '🤔', seat: 3, muted: false, handRaised: true, group: 2, isHost: false, isSpeaking: false },
+  { id: 'u4', nickname: 'Sakura', avatar: avatars[3], nameplate: '日本語マスター', defaultEmoji: '🥰', seat: 4, muted: false, handRaised: false, group: 2, isHost: false, isSpeaking: false },
+  { id: 'u5', nickname: 'David', avatar: avatars[4], nameplate: 'Business English Pro', defaultEmoji: '😎', seat: 5, muted: true, handRaised: false, group: 1, isHost: false, isSpeaking: false },
+  { id: 'u6', nickname: '小红', avatar: avatars[5], nameplate: '韩语初级', defaultEmoji: '💪', seat: 6, muted: false, handRaised: false, group: 2, isHost: false, isSpeaking: false },
 ]
 
 const sampleTasks: TaskCard[] = [
@@ -81,14 +87,32 @@ const sampleHints: Hint[] = [
   { id: 'h5', type: 'pattern', content: 'I would like to...', translation: '我想要...（礼貌表达）', example: 'I would like to order a coffee.' },
 ]
 
+const sampleSavedItems: SavedItem[] = [
+  { id: 'sv1', type: 'vocabulary', content: 'reservation', translation: '预约、预订', example: "I'd like to make a reservation.", source: '餐厅点餐-回放', createdAt: '2026-06-09 20:45' },
+  { id: 'sv2', type: 'pattern', content: "I'd like to...", translation: '我想要...（礼貌表达）', example: "I'd like to order a coffee.", source: '提示窗口收藏', createdAt: '2026-06-08 19:30' },
+]
+
+const sampleAssignedTasks: AssignedTask[] = []
+
+const sampleGroupTimers: GroupTimer[] = [
+  { groupId: 1, startTime: null, duration: 300, running: false },
+  { groupId: 2, startTime: null, duration: 300, running: false },
+]
+
 const sampleRecordings: PlaybackItem[] = [
   {
     id: 'r1', date: '2026-06-09 20:30', duration: 1800, roomName: '英语口语-餐厅点餐-中级', roomId: 'r2',
     subtitle: '我想要点一份牛排和一杯红酒。', subtitles: [],
     corrections: [
       { timestamp: 120, original: 'I want eat steak', corrected: "I'd like to eat a steak", note: "使用 I'd like to 更礼貌，steak 前加冠词 a" },
-      { timestamp:  360, original: 'How many is it?', corrected: 'How much is it?', note: '价格用 much，数量用 many' },
+      { timestamp: 360, original: 'How many is it?', corrected: 'How much is it?', note: '价格用 much，数量用 many' },
     ],
+    report: {
+      overallScore: 72, pronunciationScore: 75, grammarScore: 68, fluencyScore: 74, vocabularyScore: 71,
+      highlights: ['发音清晰，表达流畅', '正确使用了点餐核心词汇'],
+      suggestions: ['注意 "I want" 和 "I\'d like to" 的使用场景', '价格提问用 How much 而非 How many'],
+      totalWords: 245, uniqueWords: 68, speakingTime: 980,
+    },
   },
   {
     id: 'r2', date: '2026-06-08 19:00', duration: 2400, roomName: '英语面试-高级', roomId: 'r4',
@@ -146,6 +170,8 @@ const samplePlans: StudyPlan[] = [
   { id: 'p3', title: '日语N3冲刺', target: '掌握500个N3词汇', deadline: '2026-08-15', progress: 20, createdAt: '2026-06-01', checkIns: [] },
 ]
 
+const sampleCustomRooms: Room[] = []
+
 const defaultState: AppState = {
   currentWindow: 'lobby',
   profile: {
@@ -168,8 +194,8 @@ const defaultState: AppState = {
   activeTask: sampleTasks[0],
   hints: sampleHints,
   liveSubtitles: [
-    { id: 's1', speaker: '小明', speakerId: 'u3', text: 'Excuse me, how can I get to the nearest subway station?', timestamp: 0, isMe: false },
-    { id: 's2', speaker: 'Alice', speakerId: 'u2', text: 'Go straight for two blocks, then turn left at the traffic lights.', timestamp: 15, isMe: false },
+    { id: 's1', speaker: '小明', speakerId: 'u3', speakerAvatar: avatars[2], speakerEmoji: '🤔', text: 'Excuse me, how can I get to the nearest subway station?', timestamp: 0, isMe: false },
+    { id: 's2', speaker: 'Alice', speakerId: 'u2', speakerAvatar: avatars[1], speakerEmoji: '😄', text: 'Go straight for two blocks, then turn left at the traffic lights.', timestamp: 15, isMe: false },
   ],
   recordings: sampleRecordings,
   isRecording: false,
@@ -177,9 +203,16 @@ const defaultState: AppState = {
   friends: sampleFriends,
   roomInvites: sampleInvites,
   appointments: sampleAppointments,
-  favoriteRooms: ['room1', 'room3'],
+  favoriteRooms: ['r1', 'r3'],
   badges: sampleBadges,
   studyPlans: samplePlans,
+  savedItems: sampleSavedItems,
+  assignedTasks: sampleAssignedTasks,
+  groupTimers: sampleGroupTimers,
+  turnOrder: null,
+  customRooms: sampleCustomRooms,
+  currentRound: 1,
+  namedSpeakerId: null,
 }
 
 function loadFromStorage(): Partial<AppState> | null {
@@ -205,6 +238,10 @@ function saveToStorage(state: AppState) {
       selectedLanguage: state.selectedLanguage,
       selectedTheme: state.selectedTheme,
       selectedDifficulty: state.selectedDifficulty,
+      savedItems: state.savedItems,
+      tasks: state.tasks,
+      customRooms: state.customRooms,
+      friends: state.friends,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch {
@@ -219,6 +256,32 @@ function generateId(prefix: string) {
 function formatDate(d: Date) {
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function generateFluencyReport(duration: number, subtitles: SubtitleLine[], corrections: Correction[]): FluencyReport {
+  const mySubs = subtitles.filter((s) => s.isMe)
+  const totalWords = mySubs.reduce((sum, s) => sum + s.text.split(/\s+/).filter(Boolean).length, 0)
+  const uniqueWords = new Set(mySubs.flatMap((s) => s.text.toLowerCase().split(/\s+/).filter(Boolean))).size
+  const base = 60 + Math.floor(Math.random() * 20)
+  const corr = corrections.length
+  return {
+    overallScore: Math.min(100, base + Math.floor(Math.random() * 15)),
+    pronunciationScore: Math.min(100, base + Math.floor(Math.random() * 15)),
+    grammarScore: Math.max(40, Math.min(100, base - corr * 3 + Math.floor(Math.random() * 10))),
+    fluencyScore: Math.min(100, base + 5 + Math.floor(Math.random() * 15)),
+    vocabularyScore: Math.min(100, Math.floor(uniqueWords * 1.5)),
+    highlights: [
+      '发音清晰，表达流畅',
+      uniqueWords > 30 ? '词汇量丰富，表达多样' : '尝试使用更多词汇来丰富表达',
+    ],
+    suggestions: [
+      corr > 0 ? '注意语法细节，多练习常用句型' : '语法掌握良好，继续保持',
+      '可以尝试使用更复杂的从句来提升表达水平',
+    ],
+    totalWords,
+    uniqueWords,
+    speakingTime: Math.floor(duration * 0.5),
+  }
 }
 
 export const useAppStore = create<AppState & {
@@ -240,6 +303,21 @@ export const useAppStore = create<AppState & {
   enterRoom: (room: Room) => void
   leaveRoom: () => void
   syncToWindows: <K extends keyof AppState>(key: K, value: AppState[K]) => void
+  saveItem: (data: { type: CollectionType; content: string; translation: string; example?: string; source: string }) => void
+  deleteSavedItem: (id: string) => void
+  assignTaskToMember: (taskCardId: string, assigneeId: string, roundNumber: number) => void
+  updateAssignedTaskStatus: (id: string, status: TaskStatus) => void
+  setActiveTaskByCard: (taskCardId: string) => void
+  startGroupTimer: (groupId: number, durationSec: number) => void
+  stopGroupTimer: (groupId: number) => void
+  nameSpeaker: (participantId: string) => void
+  clearNamedSpeaker: () => void
+  nextTurn: () => void
+  createRoom: (data: { name: string; language: Language; theme: Theme; difficulty: Difficulty; capacity: number }) => Room
+  addFriend: (data: { nickname: string; avatar: Avatar }) => void
+  createCustomTask: (data: { title: string; theme: Theme; difficulty: Difficulty; description: string; dialog: string[]; keyVocabulary: string[]; keyPatterns: string[] }) => void
+  exportSubtitles: (recordingId: string) => string
+  enterRoomFromAppointment: (appointmentId: string) => Room | null
 }>((set, get) => {
   const stored = loadFromStorage()
 
@@ -254,7 +332,9 @@ export const useAppStore = create<AppState & {
       saveToStorage(updated)
       updated.syncToWindows('profile', newProfile)
       const parts = updated.participants.map((pp) =>
-        pp.id === 'u1' ? { ...pp, nickname: newProfile.nickname, avatar: newProfile.avatar } : pp
+        pp.id === 'u1'
+          ? { ...pp, nickname: newProfile.nickname, avatar: newProfile.avatar, nameplate: newProfile.nameplate, defaultEmoji: newProfile.defaultEmoji }
+          : pp
       )
       set({ participants: parts })
       get().syncToWindows('participants', parts)
@@ -281,13 +361,15 @@ export const useAppStore = create<AppState & {
 
       const generatedCorrections: Correction[] = state.liveSubtitles
         .filter((s) => s.isMe && Math.random() > 0.6)
-        .slice(0, 2)
-        .map((s, i) => ({
+        .slice(0, 3)
+        .map((s) => ({
           timestamp: s.timestamp,
           original: s.text,
           corrected: s.text.replace(/\bwant\b/g, "would like").replace(/\bmany\b/g, 'much'),
           note: '建议使用更礼貌/更准确的表达方式',
         }))
+
+      const report = generateFluencyReport(duration, state.liveSubtitles, generatedCorrections)
 
       const recording: PlaybackItem = {
         id: generateId('rec'),
@@ -298,6 +380,7 @@ export const useAppStore = create<AppState & {
         subtitle,
         subtitles: state.liveSubtitles,
         corrections: generatedCorrections,
+        report,
       }
 
       const newRecordings = [recording, ...state.recordings]
@@ -316,8 +399,11 @@ export const useAppStore = create<AppState & {
 
     addSubtitle: (line) => {
       const state = get()
+      const speaker = state.participants.find((p) => p.id === line.speakerId)
       const newLine: SubtitleLine = {
         ...line,
+        speakerAvatar: speaker?.avatar,
+        speakerEmoji: speaker?.defaultEmoji,
         id: generateId('sub'),
         timestamp: state.recordingStartTime
           ? Math.floor((Date.now() - state.recordingStartTime) / 1000)
@@ -364,13 +450,8 @@ export const useAppStore = create<AppState & {
       saveToStorage(get())
       get().syncToWindows('roomInvites', invites)
 
-      const sampleRooms: Room[] = [
-        { id: 'r1', name: '英语角-日常对话', language: 'en', theme: 'daily', difficulty: 'beginner', capacity: 6, current: 4, host: 'Alice' },
-        { id: 'r2', name: '餐厅点餐模拟', language: 'en', theme: 'restaurant', difficulty: 'intermediate', capacity: 4, current: 3, host: 'Mike' },
-        { id: 'r3', name: '日语入门-五十音', language: 'ja', theme: 'daily', difficulty: 'beginner', capacity: 8, current: 5, host: 'Sakura' },
-        { id: 'r4', name: '商务英语-谈判技巧', language: 'en', theme: 'business', difficulty: 'advanced', capacity: 4, current: 2, host: 'David' },
-      ]
-      const room = sampleRooms.find((r) => r.id === invite.roomId) || sampleRooms[0]
+      const allRooms = [...getAllSampleRooms(), ...state.customRooms]
+      const room = allRooms.find((r) => r.id === invite.roomId) || allRooms[0]
       get().enterRoom(room)
       return room
     },
@@ -500,7 +581,7 @@ export const useAppStore = create<AppState & {
     },
 
     leaveRoom: () => {
-      set({ currentRoom: null })
+      set({ currentRoom: null, namedSpeakerId: null, assignedTasks: [], turnOrder: null, currentRound: 1 })
       get().syncToWindows('currentRoom', null)
     },
 
@@ -509,12 +590,247 @@ export const useAppStore = create<AppState & {
         ;(window as any).electronAPI.updateState(key, value)
       }
     },
+
+    saveItem: (data) => {
+      const state = get()
+      const item: SavedItem = {
+        id: generateId('sv'),
+        ...data,
+        createdAt: formatDate(new Date()),
+      }
+      const list = [item, ...state.savedItems]
+      set({ savedItems: list })
+      saveToStorage(get())
+      get().syncToWindows('savedItems', list)
+    },
+
+    deleteSavedItem: (id) => {
+      const state = get()
+      const list = state.savedItems.filter((i) => i.id !== id)
+      set({ savedItems: list })
+      saveToStorage(get())
+      get().syncToWindows('savedItems', list)
+    },
+
+    assignTaskToMember: (taskCardId, assigneeId, roundNumber) => {
+      const state = get()
+      const task = state.tasks.find((t) => t.id === taskCardId)
+      const assignee = state.participants.find((p) => p.id === assigneeId)
+      if (!task || !assignee) return
+      const assigned: AssignedTask = {
+        id: generateId('atk'),
+        taskCardId,
+        assigneeId,
+        assigneeName: assignee.nickname,
+        assignedAt: formatDate(new Date()),
+        status: 'pending',
+        roundNumber,
+      }
+      const list = [assigned, ...state.assignedTasks]
+      set({ assignedTasks: list, activeTask: task, currentRound: roundNumber })
+      get().syncToWindows('assignedTasks', list)
+      get().syncToWindows('activeTask', task)
+      get().syncToWindows('currentRound', roundNumber)
+    },
+
+    updateAssignedTaskStatus: (id, status) => {
+      const state = get()
+      const list = state.assignedTasks.map((t) =>
+        t.id === id ? { ...t, status } : t
+      )
+      set({ assignedTasks: list })
+      get().syncToWindows('assignedTasks', list)
+    },
+
+    setActiveTaskByCard: (taskCardId) => {
+      const state = get()
+      const task = state.tasks.find((t) => t.id === taskCardId)
+      if (!task) return
+      set({ activeTask: task })
+      get().syncToWindows('activeTask', task)
+    },
+
+    startGroupTimer: (groupId, durationSec) => {
+      const state = get()
+      const timers = state.groupTimers.map((t) =>
+        t.groupId === groupId ? { ...t, startTime: Date.now(), duration: durationSec, running: true } : t
+      )
+      set({ groupTimers: timers })
+      get().syncToWindows('groupTimers', timers)
+    },
+
+    stopGroupTimer: (groupId) => {
+      const state = get()
+      const timers = state.groupTimers.map((t) =>
+        t.groupId === groupId ? { ...t, startTime: null, running: false } : t
+      )
+      set({ groupTimers: timers })
+      get().syncToWindows('groupTimers', timers)
+    },
+
+    nameSpeaker: (participantId) => {
+      const state = get()
+      const parts = state.participants.map((p) =>
+        p.id === participantId ? { ...p, isSpeaking: true } : { ...p, isSpeaking: false }
+      )
+      set({ namedSpeakerId: participantId, participants: parts })
+      get().syncToWindows('namedSpeakerId', participantId)
+      get().syncToWindows('participants', parts)
+    },
+
+    clearNamedSpeaker: () => {
+      const state = get()
+      const parts = state.participants.map((p) => ({ ...p, isSpeaking: false }))
+      set({ namedSpeakerId: null, participants: parts })
+      get().syncToWindows('namedSpeakerId', null)
+      get().syncToWindows('participants', parts)
+    },
+
+    nextTurn: () => {
+      const state = get()
+      if (!state.turnOrder) {
+        const order = {
+          id: generateId('turn'),
+          participantIds: state.participants.map((p) => p.id),
+          currentIndex: 0,
+          roundNumber: state.currentRound,
+        }
+        set({ turnOrder: order })
+        get().nameSpeaker(order.participantIds[0])
+        return
+      }
+      const nextIdx = (state.turnOrder.currentIndex + 1) % state.turnOrder.participantIds.length
+      const newRound = nextIdx === 0 ? state.turnOrder.roundNumber + 1 : state.turnOrder.roundNumber
+      const newOrder = { ...state.turnOrder, currentIndex: nextIdx, roundNumber: newRound }
+      set({ turnOrder: newOrder, currentRound: newRound })
+      get().syncToWindows('turnOrder', newOrder)
+      get().syncToWindows('currentRound', newRound)
+      get().nameSpeaker(newOrder.participantIds[nextIdx])
+    },
+
+    createRoom: (data) => {
+      const state = get()
+      const room: Room = {
+        id: generateId('room'),
+        name: data.name,
+        language: data.language,
+        theme: data.theme,
+        difficulty: data.difficulty,
+        capacity: data.capacity,
+        current: 1,
+        host: state.profile.nickname,
+        hostId: state.profile.id,
+        isCustom: true,
+      }
+      const list = [room, ...state.customRooms]
+      set({ customRooms: list })
+      saveToStorage(get())
+      get().syncToWindows('customRooms', list)
+      return room
+    },
+
+    addFriend: (data) => {
+      const state = get()
+      const friend: Friend = {
+        id: generateId('f'),
+        nickname: data.nickname,
+        avatar: data.avatar,
+        online: false,
+        level: 1,
+      }
+      const list = [friend, ...state.friends]
+      set({ friends: list })
+      saveToStorage(get())
+      get().syncToWindows('friends', list)
+    },
+
+    createCustomTask: (data) => {
+      const state = get()
+      const task: TaskCard = {
+        id: generateId('t'),
+        title: data.title,
+        theme: data.theme,
+        difficulty: data.difficulty,
+        description: data.description,
+        dialog: data.dialog,
+        keyVocabulary: data.keyVocabulary,
+        keyPatterns: data.keyPatterns,
+      }
+      const list = [task, ...state.tasks]
+      set({ tasks: list, activeTask: task })
+      saveToStorage(get())
+      get().syncToWindows('tasks', list)
+      get().syncToWindows('activeTask', task)
+    },
+
+    exportSubtitles: (recordingId) => {
+      const state = get()
+      const rec = state.recordings.find((r) => r.id === recordingId)
+      if (!rec) return ''
+      const lines = rec.subtitles.length > 0
+        ? rec.subtitles.map((s) => `[${formatSec(s.timestamp)}] ${s.speaker}: ${s.text}`).join('\n')
+        : rec.subtitle
+      const content = `# ${rec.roomName}\n日期: ${rec.date}\n时长: ${formatMin(rec.duration)}\n\n## 字幕\n${lines}\n\n## 纠错\n${rec.corrections.map((c) => `[${formatSec(c.timestamp)}] ❌ ${c.original}\n    ✅ ${c.corrected}\n    💡 ${c.note}`).join('\n\n')}`
+      if (typeof window !== 'undefined') {
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${rec.roomName}_${rec.date.replace(/[:\s]/g, '_')}.txt`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      return content
+    },
+
+    enterRoomFromAppointment: (appointmentId) => {
+      const state = get()
+      const apt = state.appointments.find((a) => a.id === appointmentId)
+      if (!apt) return null
+      const room: Room = {
+        id: generateId('room'),
+        name: `${apt.partnerName} - ${apt.topic}`,
+        language: apt.language,
+        theme: 'daily',
+        difficulty: 'intermediate',
+        capacity: 2,
+        current: 2,
+        host: apt.partnerName,
+        hostId: apt.partnerId,
+        isCustom: true,
+      }
+      get().enterRoom(room)
+      return room
+    },
   }
 })
+
+function formatSec(sec: number) {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0')
+  const s = (sec % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
+function formatMin(sec: number) {
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}分${s}秒`
+}
 
 export const { getState, setState } = useAppStore
 
 export const avatarsList = avatars
+
+export function getAllSampleRooms(): Room[] {
+  return [
+    { id: 'r1', name: '英语角-日常对话', language: 'en', theme: 'daily', difficulty: 'beginner', capacity: 6, current: 4, host: 'Alice', hostId: 'f1' },
+    { id: 'r2', name: '餐厅点餐模拟', language: 'en', theme: 'restaurant', difficulty: 'intermediate', capacity: 4, current: 3, host: 'Mike', hostId: 'f6' },
+    { id: 'r3', name: '日语入门-五十音', language: 'ja', theme: 'daily', difficulty: 'beginner', capacity: 8, current: 5, host: 'Sakura', hostId: 'f3' },
+    { id: 'r4', name: '商务英语-谈判技巧', language: 'en', theme: 'business', difficulty: 'advanced', capacity: 4, current: 2, host: 'David', hostId: 'f4' },
+    { id: 'r5', name: '韩语旅行会话', language: 'ko', theme: 'travel', difficulty: 'intermediate', capacity: 6, current: 6, host: 'Jihoon', hostId: 'f2' },
+    { id: 'r6', name: '法语咖啡时光', language: 'fr', theme: 'restaurant', difficulty: 'beginner', capacity: 4, current: 1, host: 'Pierre', hostId: 'u4' },
+  ]
+}
 
 export const languages: { value: Language; label: string; flag: string }[] = [
   { value: 'en', label: '英语', flag: '🇺🇸' },

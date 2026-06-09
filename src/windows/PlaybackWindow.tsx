@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store'
-import type { PlaybackItem } from '@/types'
+import type { PlaybackItem, SubtitleLine, Correction, CollectionType } from '@/types'
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60)
@@ -14,12 +14,28 @@ function formatTimeShort(seconds: number) {
   return `${m}:${s}`
 }
 
+interface SaveDialogState {
+  open: boolean
+  type: CollectionType
+  content: string
+  example?: string
+  source: string
+}
+
 function PlaybackWindow() {
-  const { recordings } = useAppStore()
+  const { recordings, saveItem, exportSubtitles } = useAppStore()
   const [selected, setSelected] = useState<PlaybackItem | null>(recordings[0] || null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [currentSubIdx, setCurrentSubIdx] = useState(0)
+  const [saveDialog, setSaveDialog] = useState<SaveDialogState>({
+    open: false,
+    type: 'vocabulary',
+    content: '',
+    source: '',
+  })
+  const [translationInput, setTranslationInput] = useState('')
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     setSelected(recordings[0] || null)
@@ -44,6 +60,42 @@ function PlaybackWindow() {
 
   const currentSec = selected ? Math.floor((progress / 100) * selected.duration) : 0
 
+  const openSaveDialog = (type: CollectionType, content: string, source: string, example?: string) => {
+    setSaveDialog({ open: true, type, content, example, source })
+    setTranslationInput('')
+  }
+
+  const closeSaveDialog = () => {
+    setSaveDialog({ open: false, type: 'vocabulary', content: '', source: '' })
+    setTranslationInput('')
+  }
+
+  const confirmSave = () => {
+    if (!translationInput.trim()) return
+    saveItem({
+      type: saveDialog.type,
+      content: saveDialog.content,
+      translation: translationInput.trim(),
+      example: saveDialog.example,
+      source: saveDialog.source,
+    })
+    setSaveSuccess(saveDialog.type === 'vocabulary' ? '词汇已收藏！' : '句型已收藏！')
+    setTimeout(() => setSaveSuccess(null), 2000)
+    closeSaveDialog()
+  }
+
+  const handleExportSubtitles = () => {
+    if (selected) {
+      exportSubtitles(selected.id)
+    }
+  }
+
+  const getScoreColor = (score: number) => {
+    if (score >= 85) return '#4CAF50'
+    if (score >= 70) return '#FF9800'
+    return '#F44336'
+  }
+
   return (
     <div>
       <div className="window-header">
@@ -57,6 +109,112 @@ function PlaybackWindow() {
           </button>
         </div>
       </div>
+
+      {saveSuccess && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--success)',
+            color: '#fff',
+            padding: '12px 24px',
+            borderRadius: 8,
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          }}
+        >
+          ✅ {saveSuccess}
+        </div>
+      )}
+
+      {saveDialog.open && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 999,
+          }}
+          onClick={closeSaveDialog}
+        >
+          <div
+            className="card"
+            style={{
+              width: 420,
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold mb-16">
+              收藏为{saveDialog.type === 'vocabulary' ? '词汇' : '句型'}
+            </h3>
+            <div className="mb-12">
+              <div className="text-sm text-muted mb-4">原文</div>
+              <div
+                style={{
+                  padding: 12,
+                  background: 'var(--bg-dark)',
+                  borderRadius: 8,
+                  fontSize: 14,
+                }}
+              >
+                {saveDialog.content}
+              </div>
+            </div>
+            {saveDialog.example && (
+              <div className="mb-12">
+                <div className="text-sm text-muted mb-4">例句</div>
+                <div
+                  style={{
+                    padding: 12,
+                    background: 'var(--bg-dark)',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    color: 'var(--secondary)',
+                  }}
+                >
+                  {saveDialog.example}
+                </div>
+              </div>
+            )}
+            <div className="mb-16">
+              <div className="text-sm text-muted mb-4">翻译 / 释义 *</div>
+              <input
+                type="text"
+                className="input"
+                value={translationInput}
+                onChange={(e) => setTranslationInput(e.target.value)}
+                placeholder="请输入翻译或释义"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmSave()
+                  if (e.key === 'Escape') closeSaveDialog()
+                }}
+              />
+            </div>
+            <div className="flex gap-8">
+              <button className="btn btn-secondary flex-1" onClick={closeSaveDialog}>
+                取消
+              </button>
+              <button
+                className="btn flex-1"
+                onClick={confirmSave}
+                disabled={!translationInput.trim()}
+              >
+                确认收藏
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-2 gap-24">
         <div>
@@ -97,6 +255,11 @@ function PlaybackWindow() {
                     <span>📅 {rec.date}</span>
                     <span>⏱️ {formatDuration(rec.duration)}</span>
                   </div>
+                  {rec.report && (
+                    <div className="mt-8 text-sm">
+                      <span className="badge badge-purple">总分 {rec.report.overallScore}</span>
+                    </div>
+                  )}
                   <div className="text-sm text-secondary mt-12" style={{
                     display: '-webkit-box',
                     WebkitLineClamp: 1,
@@ -114,6 +277,92 @@ function PlaybackWindow() {
         <div>
           {selected ? (
             <div>
+              {selected.report && (
+                <div className="card mb-16">
+                  <h3 className="font-bold mb-12">📊 流利度报告</h3>
+                  <div className="grid grid-3 gap-12 mb-16" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+                    {[
+                      { label: '总分', value: selected.report.overallScore },
+                      { label: '发音', value: selected.report.pronunciationScore },
+                      { label: '语法', value: selected.report.grammarScore },
+                      { label: '流利度', value: selected.report.fluencyScore },
+                      { label: '词汇', value: selected.report.vocabularyScore },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          textAlign: 'center',
+                          padding: 12,
+                          background: 'var(--bg-dark)',
+                          borderRadius: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 28,
+                            fontWeight: 'bold',
+                            color: getScoreColor(item.value),
+                          }}
+                        >
+                          {item.value}
+                        </div>
+                        <div className="text-sm text-muted mt-2">{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-2 gap-16 mb-12">
+                    <div>
+                      <div className="font-bold mb-8" style={{ color: '#4CAF50' }}>
+                        ✨ 亮点
+                      </div>
+                      <ul style={{ paddingLeft: 20 }}>
+                        {selected.report.highlights.map((h, i) => (
+                          <li key={i} className="text-sm text-secondary mb-4">
+                            {h}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-bold mb-8" style={{ color: '#FF9800' }}>
+                        💡 建议
+                      </div>
+                      <ul style={{ paddingLeft: 20 }}>
+                        {selected.report.suggestions.map((s, i) => (
+                          <li key={i} className="text-sm text-secondary mb-4">
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="divider" />
+
+                  <div className="grid grid-3 gap-12 mt-12" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, fontWeight: 'bold', color: 'var(--primary)' }}>
+                        {selected.report.totalWords}
+                      </div>
+                      <div className="text-sm text-muted mt-2">总字数</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, fontWeight: 'bold', color: 'var(--secondary)' }}>
+                        {selected.report.uniqueWords}
+                      </div>
+                      <div className="text-sm text-muted mt-2">词汇量</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, fontWeight: 'bold', color: 'var(--accent)' }}>
+                        {formatDuration(selected.report.speakingTime)}
+                      </div>
+                      <div className="text-sm text-muted mt-2">说话时长</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="card mb-16">
                 <h3 className="font-bold mb-4">{selected.roomName}</h3>
                 <div className="text-sm text-muted mb-16">
@@ -185,32 +434,101 @@ function PlaybackWindow() {
                       padding: 12,
                       background: 'var(--bg-dark)',
                       borderRadius: 12,
-                      maxHeight: 200,
+                      maxHeight: 300,
                       overflowY: 'auto',
                     }}
                   >
                     {selected.subtitles.length === 0 ? (
                       <div className="text-secondary">{selected.subtitle}</div>
                     ) : (
-                      selected.subtitles.map((sub, i) => (
+                      selected.subtitles.map((sub: SubtitleLine, i: number) => (
                         <div
                           key={sub.id}
-                          className="flex gap-8 mb-6"
+                          className="mb-6"
                           style={{
                             opacity: i === currentSubIdx ? 1 : 0.5,
                             background: i === currentSubIdx ? 'rgba(108, 92, 231, 0.15)' : undefined,
-                            padding: i === currentSubIdx ? '6px 8px' : undefined,
-                            borderRadius: 6,
+                            padding: '8px 10px',
+                            borderRadius: 8,
                             transition: 'all 0.2s',
                           }}
                         >
-                          <span className="badge badge-purple">
-                            {formatTimeShort(sub.timestamp)}
-                          </span>
-                          <span className="font-medium text-sm" style={{ color: sub.isMe ? 'var(--secondary)' : undefined }}>
-                            {sub.speaker}:
-                          </span>
-                          <span className="text-secondary text-sm">{sub.text}</span>
+                          <div className="flex items-start gap-8">
+                            <div
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: '50%',
+                                background: sub.speakerAvatar?.color || 'var(--primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 20,
+                                flexShrink: 0,
+                                position: 'relative',
+                              }}
+                            >
+                              {sub.speakerAvatar?.emoji || '👤'}
+                              {sub.speakerEmoji && (
+                                <span
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: -4,
+                                    right: -4,
+                                    fontSize: 14,
+                                    background: 'var(--bg-dark)',
+                                    borderRadius: '50%',
+                                    padding: 2,
+                                  }}
+                                >
+                                  {sub.speakerEmoji}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-1" style={{ minWidth: 0 }}>
+                              <div className="flex items-center gap-8 mb-2">
+                                <span className="badge badge-purple" style={{ fontSize: 11 }}>
+                                  {formatTimeShort(sub.timestamp)}
+                                </span>
+                                <span
+                                  className="font-medium text-sm"
+                                  style={{ color: sub.isMe ? 'var(--secondary)' : undefined }}
+                                >
+                                  {sub.speaker}
+                                </span>
+                              </div>
+                              <div className="text-secondary text-sm mb-6">{sub.text}</div>
+                              <div className="flex gap-6">
+                                <button
+                                  className="btn btn-small btn-secondary"
+                                  style={{ fontSize: 12, padding: '4px 10px' }}
+                                  onClick={() =>
+                                    openSaveDialog(
+                                      'vocabulary',
+                                      sub.text,
+                                      `${selected.roomName}-字幕`
+                                    )
+                                  }
+                                >
+                                  📚 收藏词汇
+                                </button>
+                                <button
+                                  className="btn btn-small btn-secondary"
+                                  style={{ fontSize: 12, padding: '4px 10px' }}
+                                  onClick={() =>
+                                    openSaveDialog(
+                                      'pattern',
+                                      sub.text,
+                                      `${selected.roomName}-字幕`,
+                                      sub.text
+                                    )
+                                  }
+                                >
+                                  💬 收藏句型
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ))
                     )}
@@ -223,14 +541,30 @@ function PlaybackWindow() {
                   ✏️ AI 纠错 ({selected.corrections.length})
                 </h3>
                 {selected.corrections.length > 0 ? (
-                  selected.corrections.map((corr, i) => (
+                  selected.corrections.map((corr: Correction, i: number) => (
                     <div key={i} className="correction-item">
                       <div className="text-sm text-muted mb-4">
                         ⏱️ {formatTimeShort(corr.timestamp)}
                       </div>
                       <div className="correction-text mb-4">❌ {corr.original}</div>
                       <div className="corrected-text mb-4">✅ {corr.corrected}</div>
-                      <div className="text-sm text-secondary">💡 {corr.note}</div>
+                      <div className="text-sm text-secondary mb-8">💡 {corr.note}</div>
+                      <div className="flex gap-6">
+                        <button
+                          className="btn btn-small btn-secondary"
+                          style={{ fontSize: 12, padding: '4px 10px' }}
+                          onClick={() =>
+                            openSaveDialog(
+                              'pattern',
+                              corr.corrected,
+                              `${selected.roomName}-纠错`,
+                              corr.corrected
+                            )
+                          }
+                        >
+                          💬 收藏正确句型
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -242,7 +576,9 @@ function PlaybackWindow() {
               </div>
 
               <div className="flex gap-8">
-                <button className="btn flex-1">📤 导出字幕</button>
+                <button className="btn flex-1" onClick={handleExportSubtitles}>
+                  📤 导出字幕
+                </button>
                 <button
                   className="btn btn-secondary flex-1"
                   onClick={() => window.electronAPI.openWindow('room')}
